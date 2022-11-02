@@ -8,6 +8,11 @@ services:
       - ./.env
     ports:
       - "${DEV_PORT}:80"
+      - "${NOTEBOOK_PORT}:8888"
     volumes:
       - .:/app:z
+      - poetry-cache:/root/.cache/pypoetry:z
     entrypoint: ["/bin/bash", "/app/docker-entrypoint.sh"]
+
+volumes:
+  poetry-cache:
