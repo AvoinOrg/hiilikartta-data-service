@@ -13,6 +13,9 @@ python-multipart = "^0.0.5"
 pandas = "^1.5.1"
 rasterio = "^1.3.3"
 rioxarray = "^0.12.4"
+geopandas = "^0.12.1"
+matplotlib = "^3.6.2"
+geocube = "^0.3.3"
 
 [tool.poetry.group.dev.dependencies]
 jupyter = "^1.0.0"
