@@ -11,8 +11,8 @@ services:
       - "${NOTEBOOK_PORT}:8888"
     volumes:
       - .:/app:z
-      - poetry-cache:/root/.cache/pypoetry:z
+      # - poetry-cache:/root/.cache/pypoetry:z
     entrypoint: ["/bin/bash", "/app/docker-entrypoint.sh"]
 
-volumes:
-  poetry-cache:
+# volumes:
+#   poetry-cache:
