@@ -32,8 +32,9 @@ class CarbonCalculator:
         carbon_arr = zone_raster["factor"] * self.carbon_data
 
         sum = carbon_arr.sum(skipna=True).item()
+        area = zone.geometry.unary_union.area
 
-        return sum
+        return sum, area
 
 # %%
 # CarbonCalculator().calculate("data/vantaa_yk.shp")
