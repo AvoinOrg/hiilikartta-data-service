@@ -11,7 +11,9 @@ services:
       - "${NOTEBOOK_PORT}:8888"
     volumes:
       - .:/app:z
-      # - poetry-cache:/root/.cache/pypoetry:z
+      - ./.cache:/root/.cache
+      - ./.conda-pkgs:/root/conda/pkgs
+      - ./.vscode-server:/root/.vscode-server
     entrypoint: ["/bin/bash", "/app/docker-entrypoint.sh"]
 
 # volumes:
