@@ -12,7 +12,7 @@ services:
     volumes:
       - .:/app:z
       - ./.cache:/root/.cache
-      - ./.conda-pkgs:/root/conda/pkgs
+      # - ./.conda-pkgs:/root/conda/pkgs
       - ./.vscode-server:/root/.vscode-server
       - ${SSH_KEY_PATH}:/root/.ssh/id_rsa:z
     entrypoint: ["/bin/bash", "/app/docker-entrypoint.sh"]
