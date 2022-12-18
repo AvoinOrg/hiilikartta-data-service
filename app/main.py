@@ -21,6 +21,6 @@ cc = CarbonCalculator()
 
 
 @app.post("/calculate")
-async def create_upload_file(file: UploadFile):
+async def calculate(file: UploadFile):
     sum, area = cc.calculate(file.file)
     return {"sum": sum, "area": area}
