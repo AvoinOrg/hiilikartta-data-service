@@ -41,6 +41,8 @@ class CarbonCalculator:
 
         self.rasterize_zone()
 
+        rast = await fetch_raster_for_region(self.db_session, wkt, 4326)
+
         if (rast == None):
             return None
 
