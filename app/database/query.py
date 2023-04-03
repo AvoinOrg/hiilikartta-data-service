@@ -13,7 +13,7 @@ async def fetch_raster_for_region(db_session: AsyncSession, wkt, crs):
             f"""
                     SELECT
                     ST_AsTIFF(ST_Union(rast), 'LZW') as tiff
-                    FROM vantaa_luke_mvmi2017_segmpuustonhiili10kgha
+                    FROM luke_mvmi2015_segm_bmsum10kgha
                     WHERE ST_Intersects(
                     rast, 
                     ST_Transform(
