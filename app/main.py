@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, UploadFile, Form
+from fastapi import FastAPI, Depends, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,4 +28,7 @@ async def calculate(
 ):
     cc = CarbonCalculator(file.file, zoning_col, db_session)
     calcs = await cc.calculate()
+    if calcs == None:
+        raise HTTPException(status_code=400, detail="No data found for polygons.")
+    
     return {"sum": calcs.get("sum"), "area": calcs.get("area")}
