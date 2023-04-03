@@ -27,5 +27,5 @@ async def calculate(
     db_session: AsyncSession = Depends(get_db),
 ):
     cc = CarbonCalculator(file.file, zoning_col, db_session)
-    sum, area = await cc.calculate()
-    return {"sum": sum, "area": area}
+    calcs = await cc.calculate()
+    return {"sum": calcs.get("sum"), "area": calcs.get("area")}

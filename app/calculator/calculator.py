@@ -55,10 +55,11 @@ class CarbonCalculator:
 
         carbon_arr = self.zone_raster["factor"] * carbon_data
 
+
         sum = carbon_arr.sum(skipna=True).item()
         area = self.zone.geometry.unary_union.area
 
-        return sum, area
+        return {"sum": sum, "area": area}
 
 
 # %%
