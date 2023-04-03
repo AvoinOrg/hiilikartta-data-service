@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, UploadFile
+from fastapi import FastAPI, Depends, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,8 +19,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.post("/calculate")
-async def calculate(file: UploadFile, db_session: AsyncSession = Depends(get_db)):
-    cc = CarbonCalculator(file.file, db_session)
+async def calculate(
+    file: UploadFile = Form(...),
+    zoning_col: str = Form(...),
+    db_session: AsyncSession = Depends(get_db),
+):
+    cc = CarbonCalculator(file.file, zoning_col, db_session)
     sum, area = await cc.calculate()
     return {"sum": sum, "area": area}
