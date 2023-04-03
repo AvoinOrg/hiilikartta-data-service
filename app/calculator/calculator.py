@@ -41,7 +41,8 @@ class CarbonCalculator:
 
         self.rasterize_zone()
 
-        rast = await fetch_raster_for_region(self.db_session, wkt, 3879)
+        if (rast == None):
+            return None
 
         with rio.MemoryFile(rast).open() as dataset:
             carbon_data = rxr.open_rasterio(dataset)
