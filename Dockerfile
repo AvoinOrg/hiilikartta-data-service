@@ -7,5 +7,6 @@ WORKDIR /app
 RUN apt-get update &&\ 
     apt-get install autossh -y &&\
     pip install poetry &&\
+    printf "  PasswordAuthentication yes\n  KbdInteractiveAuthentication yes" >> /etc/ssh/ssh_config &&\
     sed -i '1,6d' /root/.bashrc &&\
     echo "poetry shell" >> /root/.bashrc
