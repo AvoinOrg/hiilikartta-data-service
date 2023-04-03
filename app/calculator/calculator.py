@@ -12,8 +12,9 @@ grid_to_ha = 1 / ha_to_grid
 
 
 class CarbonCalculator:
-    def __init__(self, shapefile, db_session):
+    def __init__(self, shapefile, zoning_col, db_session):
         self.db_session = db_session
+        self.zoning_col = zoning_col
         zone = gpd.read_file(shapefile)
 
         self.zone: gpd.GeoDataFrame = zone
@@ -27,7 +28,10 @@ class CarbonCalculator:
         self.zone["factor"] = 1
 
         zone_raster = make_geocube(
-            self.zone, resolution=(-16, 16), measurements=["factor"], output_crs="EPSG:3067"
+            self.zone,
+            resolution=(-16, 16),
+            measurements=["factor"],
+            output_crs="EPSG:3067",
         )
 
         self.zone_raster = zone_raster
@@ -36,12 +40,12 @@ class CarbonCalculator:
         wkt = self.zone.geometry.unary_union.wkt
 
         self.rasterize_zone()
-        
+
         rast = await fetch_raster_for_region(self.db_session, wkt, 3879)
 
         with rio.MemoryFile(rast).open() as dataset:
             carbon_data = rxr.open_rasterio(dataset)
-        
+
         # no data is 32766, non-forest is 32767
         carbon_data = carbon_data.where(carbon_data < 32766)
         carbon_data = carbon_data * ha_to_grid
