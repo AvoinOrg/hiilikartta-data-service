@@ -16,6 +16,7 @@ class CarbonCalculator:
         self.db_session = db_session
         self.zoning_col = zoning_col
         zone = gpd.read_file(shapefile)
+        zone = zone.to_crs("EPSG:3067")
 
         self.zone: gpd.GeoDataFrame = zone
         self.zone_raster = None
@@ -41,20 +42,19 @@ class CarbonCalculator:
 
         self.rasterize_zone()
 
-        rast = await fetch_raster_for_region(self.db_session, wkt, 4326)
+        rast = await fetch_raster_for_region(self.db_session, wkt, 3067)
 
-        if (rast == None):
+        if rast == None:
             return None
 
         with rio.MemoryFile(rast).open() as dataset:
             carbon_data = rxr.open_rasterio(dataset)
 
         # no data is 32766, non-forest is 32767
-        carbon_data = carbon_data.where(carbon_data < 32766)
+        carbon_data = carbon_data.where(carbon_data < 32766) * 0.5
         carbon_data = carbon_data * ha_to_grid
 
         carbon_arr = self.zone_raster["factor"] * carbon_data
-
 
         sum = carbon_arr.sum(skipna=True).item()
         area = self.zone.geometry.unary_union.area
