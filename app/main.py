@@ -1,6 +1,8 @@
-from fastapi import FastAPI, Depends, UploadFile, Form, HTTPException
+from fastapi import FastAPI, Depends, UploadFile, Form, HTTPException, Response
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
+import gzip
+import json
 
 from app.database.database import get_db
 from app.calculator.calculator import CarbonCalculator
@@ -27,8 +29,18 @@ async def calculate(
     db_session: AsyncSession = Depends(get_db),
 ):
     cc = CarbonCalculator(file.file, zoning_col, db_session)
-    calcs = await cc.calculate()
-    if calcs == None:
+    data = await cc.calculate()
+
+    # This probably no longer works. Figure out a better way to check for empty data.
+    if data == None:
         raise HTTPException(status_code=400, detail="No data found for polygons.")
-    
-    return {"sum": calcs.get("sum"), "area": calcs.get("area")}
+
+    json_str = json.dumps(data)
+
+    # Gzipping the JSON string
+    json_bytes = json_str.encode("utf-8")
+    gzipped_json = gzip.compress(json_bytes)
+
+    headers = {"Content-Encoding": "gzip", "Content-Type": "application/json"}
+
+    return Response(content=gzipped_json, headers=headers)
