@@ -44,3 +44,34 @@ async def fetch_variables_for_region(db_session: AsyncSession, wkt: str, crs: st
 
     except SQLAlchemyError as ex:
         logger.exception(ex)
+
+
+async def fetch_bio_carbon_for_region(db_session: AsyncSession, wkt: str, crs: str):
+    crs = int(crs)
+
+    try:
+        statement = text(
+            f"""
+                SELECT
+                    ST_AsTIFF(ST_UNION(rast), 'LZW') as tiff
+                    FROM luke_mvmipuustonhiili_2021_tcha
+                    WHERE ST_Intersects(
+                        rast, 
+                            ST_SetSRID(
+                                ST_GeomFromText(
+                                    :wkt
+                                ),
+                            3067
+                        )
+                    );
+                """
+        )
+
+        await db_session.execute(text("SET postgis.gdal_enabled_drivers TO 'GTiff';"))
+        result = await db_session.execute(statement, {"wkt": wkt, "crs": crs})
+
+        return result.fetchall()[0][0]
+
+    except SQLAlchemyError as ex:
+        logger.exception(ex)
+
