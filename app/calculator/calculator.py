@@ -3,6 +3,8 @@ import rasterio as rio
 import geopandas as gpd
 import xarray as xr
 from geocube.api.core import make_geocube
+import asyncio
+import numpy as np
 
 from app.database.query import (
     fetch_variables_for_region,
@@ -162,26 +164,39 @@ class CarbonCalculator:
     async def calculate(self):
         wkt = self.zone.geometry.unary_union.wkt
 
-        self.rasterize_zone()
+        self.zone = self.add_zone_factors(self.zone)
 
-        rast = await fetch_raster_for_region(self.db_session, wkt, 3067)
+        variables_ds, bio_carbon_da, ground_carbon_da = await asyncio.gather(
+            self.get_variables(wkt, crs),
+            self.get_bio_carbon(wkt, crs),
+            self.get_ground_carbon(wkt, crs),
+        )
 
-        if rast == None:
-            return None
+        variables_ds = self.combine_data(variables_ds, bio_carbon_da, ground_carbon_da)
 
-        with rio.MemoryFile(rast).open() as dataset:
-            carbon_data = rxr.open_rasterio(dataset)
+        area_das = await self.get_area_das(self.zone, variables_ds)
 
-        # no data is 32766, non-forest is 32767
-        carbon_data = carbon_data.where(carbon_data < 32766) * 0.5
-        carbon_data = carbon_data * ha_to_grid
+        zone = self.zone.copy()
 
-        carbon_arr = self.zone_raster["factor"] * carbon_data
+        zone["bio_carbon_sum"] = None
+        zone["ground_carbon_sum"] = None
+        zone["bio_carbon_per_area"] = None
+        zone["ground_carbon_per_area"] = None
 
-        sum = carbon_arr.sum(skipna=True).item()
-        area = self.zone.geometry.unary_union.area
+        for da in area_das:
+            bio_carbon_sum = (da * variables_ds["bio_carbon"]).sum(skipna=True).item()
+            ground_carbon_sum = (
+                (da * variables_ds["ground_carbon"]).sum(skipna=True).item()
+            )
+            index = da.attrs[
+                "df_index"
+            ]  # Get the appropriate index/row from the DataArray attribute
+            zone.at[index, "bio_carbon_sum"] = bio_carbon_sum
+            zone.at[index, "ground_carbon_sum"] = ground_carbon_sum
+            zone.at[index, "bio_carbon_per_area"] = bio_carbon_sum * ha_to_grid
+            zone.at[index, "ground_carbon_per_area"] = ground_carbon_sum * ha_to_grid
 
-        return {"sum": sum, "area": area}
+        return {"geojson": zone.to_json()}
 
 
 # %%
