@@ -96,6 +96,18 @@ class CarbonCalculator:
             ground_carbon_da.where(ground_carbon_da < 32766)
 
             return ground_carbon_da
+
+    def combine_data(
+        self,
+        variables_ds: xr.Dataset,
+        bio_carbon_da: xr.DataArray,
+        ground_carbon_da: xr.DataArray,
+    ):
+        variables_ds["ground_carbon"] = ground_carbon_da.sel(band=1)
+        variables_ds["bio_carbon"] = bio_carbon_da.sel(band=1)
+
+        return variables_ds
+
     async def calculate(self):
         wkt = self.zone.geometry.unary_union.wkt
 
