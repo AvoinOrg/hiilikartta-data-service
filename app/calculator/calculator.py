@@ -76,6 +76,16 @@ class CarbonCalculator:
         variables_ds = variables_ds.squeeze(dim="band", drop=True)
 
         return variables_ds
+
+    async def get_bio_carbon(self, wkt: str, crs: str) -> xr.DataArray:
+        rast = await fetch_bio_carbon_for_region(self.db_session, wkt, crs)
+
+        with rio.MemoryFile(rast).open() as dataset:
+            bio_carbon_da = rxr.open_rasterio(dataset, masked=True)
+            # no data is 32766, non-forest is 32767
+            bio_carbon_da.where(bio_carbon_da < 32766)
+
+            return bio_carbon_da
     async def calculate(self):
         wkt = self.zone.geometry.unary_union.wkt
 
