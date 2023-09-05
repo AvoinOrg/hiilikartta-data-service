@@ -41,6 +41,56 @@ class CarbonCalculator:
 
         self.zone_raster = zone_raster
 
+    def add_zone_factors(self, zone):
+        zone["factor"] = 1
+
+        return zone
+
+    async def get_area_das(self, zone_df, ds):
+        bounds = zone_df.geometry.unary_union.bounds
+        minx, miny, maxx, maxy = bounds
+
+        # Define the resolution you want
+        res = 1  # Adjust as needed
+
+        # Compute dimensions based on bounding box and resolution
+        height = int((maxy - miny) / res)
+        width = int((maxx - minx) / res)
+
+        # Define the transform
+        transform = rio.transform.from_origin(minx, maxy, res, res)
+
+        crs_code = zone_df.crs.to_string()
+        data_arrays = []
+
+        for index, row in zone_df.iterrows():
+            # Create a binary mask where the polygon is
+            mask = rio.features.geometry_mask(
+                [row["geometry"]],
+                transform=transform,
+                invert=True,
+                out_shape=(height, width),
+            )
+
+            # Convert mask to xarray DataArray
+            da = xr.DataArray(
+                np.where(
+                    mask, row["factor"], np.nan
+                ),  # Assign the "factor" value where the mask is True, otherwise NaN
+                dims=("y", "x"),
+                coords={
+                    "x": np.linspace(minx, maxx - res, width),
+                    "y": np.linspace(maxy, miny - res, height),
+                },
+                name=f"polygon_{row['id']}",
+            )
+            da.rio.set_crs(crs_code, inplace=True)
+            da.attrs["df_index"] = index
+            da = da.interp(y=ds.y, x=ds.x)
+            data_arrays.append(da)
+
+        return data_arrays
+
     async def get_variables(self, wkt: str, crs: str) -> xr.Dataset:
         rows, column_names = await fetch_variables_for_region(self.db_session, wkt, crs)
 
