@@ -13,6 +13,7 @@ from app.database.query import (
 
 ha_to_grid = 16 * 16 / 10000
 grid_to_ha = 1 / ha_to_grid
+crs = "3067"
 
 
 class CarbonCalculator:
@@ -20,7 +21,7 @@ class CarbonCalculator:
         self.db_session = db_session
         self.zoning_col = zoning_col
         zone = gpd.read_file(shapefile)
-        zone = zone.to_crs("EPSG:3067")
+        zone = zone.to_crs(f"EPSG:{crs}")
 
         self.zone: gpd.GeoDataFrame = zone
         self.zone_raster = None
@@ -36,7 +37,7 @@ class CarbonCalculator:
             self.zone,
             resolution=(-16, 16),
             measurements=["factor"],
-            output_crs="EPSG:3067",
+            output_crs=f"EPSG:{crs}",
         )
 
         self.zone_raster = zone_raster
