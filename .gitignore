@@ -263,3 +263,6 @@ $RECYCLE.BIN/
 
 data/*
 
+tests/data/*
+
+notebooks/temp/*
