@@ -5,6 +5,7 @@ import xarray as xr
 from geocube.api.core import make_geocube
 import asyncio
 import numpy as np
+import time
 
 from app.database.query import (
     fetch_variables_for_region,
@@ -253,6 +254,7 @@ class CarbonCalculator:
         return {
             "areas": zone.to_json(),
             "totals": summed_gdf.to_json(),
+            "metadata": {"timestamp": int(time.time())},
         }
 
 
