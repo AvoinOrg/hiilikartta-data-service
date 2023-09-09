@@ -13,7 +13,9 @@ from app.database.query import (
     fetch_bio_carbon_for_region,
     fetch_ground_carbon_for_region,
 )
+from app.utils.logger import get_logger
 
+logger = get_logger(__name__)
 
 ha_to_grid = 16 * 16 / 10000
 grid_to_ha = 1 / ha_to_grid
