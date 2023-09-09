@@ -192,10 +192,12 @@ class CarbonCalculator:
         for col in columns:
             for year in years:
                 for suffix in ["nochange", "planned"]:
-                    all_columns.append(f"{col}_{year}_{suffix}")
+                    all_columns.append(f"{col}_{suffix}_{year}")
 
         for col in all_columns:
             zone[col] = None
+
+        zone["area"] = zone["geometry"].area
 
         for da in area_das:
             bio_carbon_sum = (da * variables_ds["bio_carbon"]).sum(skipna=True).item()
@@ -214,10 +216,10 @@ class CarbonCalculator:
                 ground_carbon_sum * ha_to_grid
             )
 
-            zone.at[index, "bio_carbon_sum_planned"] = 0
-            zone.at[index, "ground_carbon_sum_planned"] = ground_carbon_sum
-            zone.at[index, "bio_carbon_per_area_planned"] = 0
-            zone.at[index, "ground_carbon_per_area_planned"] = (
+            zone.at[index, "bio_carbon_sum_planned_now"] = 0
+            zone.at[index, "ground_carbon_sum_planned_now"] = ground_carbon_sum
+            zone.at[index, "bio_carbon_per_area_planned_now"] = 0
+            zone.at[index, "ground_carbon_per_area_planned_now"] = (
                 ground_carbon_sum * ha_to_grid
             )
 
@@ -250,12 +252,15 @@ class CarbonCalculator:
         summed_data["geometry"] = [combined_geometry]
 
         summed_gdf = gpd.GeoDataFrame(summed_data)
+        summed_gdf["area"] = summed_gdf.geometry.area
 
         return_data = {
             "areas": zone.to_json(),
             "totals": summed_gdf.to_json(),
             "metadata": json.dumps({"timestamp": int(time.time())}),
         }
+
+        return return_data
 
 
 # %%
