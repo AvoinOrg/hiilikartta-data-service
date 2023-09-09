@@ -24,19 +24,33 @@ def test_response_code(fetched_data):
     assert fetched_data.status_code == 200
 
 
-def test_geojson_is_returned(fetched_data):
-    assert fetched_data.json()["geojson"] != None
+def test_areas_are_returned(fetched_data):
+    assert fetched_data.json()["areas"] != None
+
+
+def test_totals_are_returned(fetched_data):
+    assert fetched_data.json()["totals"] != None
 
 
 @pytest.fixture(scope="module")
-def gdf_response_geojson_data(fetched_data):
-    gdf = gpd.read_file(fetched_data.json()["geojson"])
+def gdf_response_areas_data(fetched_data):
+    gdf = gpd.read_file(fetched_data.json()["areas"])
     gdf.sort_values(by=["OBJECTID"], inplace=True)
     return gdf
 
 
-def test_geojson_contains_data(gdf_response_geojson_data):
-    assert len(gdf_response_geojson_data) > 0
+@pytest.fixture(scope="module")
+def gdf_response_totals_data(fetched_data):
+    gdf = gpd.read_file(fetched_data.json()["totals"])
+    return gdf
+
+
+def test_areas_data_contains_items(gdf_response_areas_data):
+    assert len(gdf_response_areas_data) > 0
+
+
+def test_totals_data_contains_items(gdf_response_areas_data):
+    assert len(gdf_response_areas_data) > 0
 
 
 @pytest.fixture(scope="module")
