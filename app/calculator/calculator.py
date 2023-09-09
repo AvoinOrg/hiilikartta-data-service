@@ -178,10 +178,23 @@ class CarbonCalculator:
 
         zone = self.zone.copy()
 
-        zone["bio_carbon_sum"] = None
-        zone["ground_carbon_sum"] = None
-        zone["bio_carbon_per_area"] = None
-        zone["ground_carbon_per_area"] = None
+        columns = [
+            "bio_carbon_sum",
+            "ground_carbon_sum",
+            "bio_carbon_per_area",
+            "ground_carbon_per_area",
+        ]
+        years = ["now", "2035", "2045", "2055"]
+
+        all_columns = []
+
+        for col in columns:
+            for year in years:
+                for suffix in ["nochange", "planned"]:
+                    all_columns.append(f"{col}_{year}_{suffix}")
+
+        for col in all_columns:
+            zone[col] = None
 
         for da in area_das:
             bio_carbon_sum = (da * variables_ds["bio_carbon"]).sum(skipna=True).item()
@@ -191,10 +204,42 @@ class CarbonCalculator:
             index = da.attrs[
                 "df_index"
             ]  # Get the appropriate index/row from the DataArray attribute
-            zone.at[index, "bio_carbon_sum"] = bio_carbon_sum
-            zone.at[index, "ground_carbon_sum"] = ground_carbon_sum
-            zone.at[index, "bio_carbon_per_area"] = bio_carbon_sum * ha_to_grid
-            zone.at[index, "ground_carbon_per_area"] = ground_carbon_sum * ha_to_grid
+            zone.at[index, "bio_carbon_sum_nochange_now"] = bio_carbon_sum
+            zone.at[index, "ground_carbon_sum_nochange_now"] = ground_carbon_sum
+            zone.at[index, "bio_carbon_per_area_nochange_now"] = (
+                bio_carbon_sum * ha_to_grid
+            )
+            zone.at[index, "ground_carbon_per_area_nochange_now"] = (
+                ground_carbon_sum * ha_to_grid
+            )
+
+            zone.at[index, "bio_carbon_sum_planned"] = 0
+            zone.at[index, "ground_carbon_sum_planned"] = ground_carbon_sum
+            zone.at[index, "bio_carbon_per_area_planned"] = 0
+            zone.at[index, "ground_carbon_per_area_planned"] = (
+                ground_carbon_sum * ha_to_grid
+            )
+
+            zone.at[index, "bio_carbon_sum_planned_2035"] = 0
+            zone.at[index, "ground_carbon_sum_planned_2035"] = ground_carbon_sum
+            zone.at[index, "bio_carbon_per_area_planned_2035"] = 0
+            zone.at[index, "ground_carbon_per_area_planned_2035"] = (
+                ground_carbon_sum * ha_to_grid
+            )
+
+            zone.at[index, "bio_carbon_sum_planned_2045"] = 0
+            zone.at[index, "ground_carbon_sum_planned_2045"] = ground_carbon_sum
+            zone.at[index, "bio_carbon_per_area_planned_2045"] = 0
+            zone.at[index, "ground_carbon_per_area_planned_2045"] = (
+                ground_carbon_sum * ha_to_grid
+            )
+
+            zone.at[index, "bio_carbon_sum_planned_2055"] = 0
+            zone.at[index, "ground_carbon_sum_planned_2055"] = ground_carbon_sum
+            zone.at[index, "bio_carbon_per_area_planned_2055"] = 0
+            zone.at[index, "ground_carbon_per_area_planned_2055"] = (
+                ground_carbon_sum * ha_to_grid
+            )
 
         return {"geojson": zone.to_json()}
 
