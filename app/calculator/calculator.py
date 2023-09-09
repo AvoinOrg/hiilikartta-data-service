@@ -6,6 +6,7 @@ from geocube.api.core import make_geocube
 import asyncio
 import numpy as np
 import time
+import json
 
 from app.database.query import (
     fetch_variables_for_region,
