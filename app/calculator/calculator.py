@@ -241,7 +241,19 @@ class CarbonCalculator:
                 ground_carbon_sum * ha_to_grid
             )
 
-        return {"geojson": zone.to_json()}
+        sums = zone[all_columns].sum()
+        combined_geometry = zone.geometry.unary_union
+
+        # Create a new GeoDataFrame with the summed values and combined geometry
+        summed_data = {column: [value] for column, value in sums.items()}
+        summed_data["geometry"] = [combined_geometry]
+
+        summed_gdf = gpd.GeoDataFrame(summed_data)
+
+        return {
+            "areas": zone.to_json(),
+            "totals": summed_gdf.to_json(),
+        }
 
 
 # %%
