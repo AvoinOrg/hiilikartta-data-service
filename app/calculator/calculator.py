@@ -251,10 +251,10 @@ class CarbonCalculator:
 
         summed_gdf = gpd.GeoDataFrame(summed_data)
 
-        return {
+        return_data = {
             "areas": zone.to_json(),
             "totals": summed_gdf.to_json(),
-            "metadata": {"timestamp": int(time.time())},
+            "metadata": json.dumps({"timestamp": int(time.time())}),
         }
 
 
