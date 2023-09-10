@@ -247,15 +247,23 @@ class CarbonCalculator:
                 ground_carbon_sum * ha_to_grid
             )
 
-        sums = zone[all_columns].sum()
-        combined_geometry = zone.geometry.unary_union
+        sum_cols = [col for col in all_columns if "_sum" in col]
+        sum_result = zone[sum_cols].sum()
 
-        # Create a new GeoDataFrame with the summed values and combined geometry
-        summed_data = {column: [value] for column, value in sums.items()}
-        summed_data["geometry"] = [combined_geometry]
+        # 2. For all "per_area" columns
+        per_area_cols = [col for col in all_columns if "_per_area" in col]
+        weighted_averages = {}
 
-        summed_gdf = gpd.GeoDataFrame(summed_data)
-        summed_gdf["area"] = summed_gdf.geometry.area
+        total_area = zone["area"].sum()
+        for col in per_area_cols:
+            weighted_sum = (zone[col] * zone["area"]).sum()
+            weighted_averages[col] = weighted_sum / total_area
+
+        # Merge the results
+        agg_results = {**sum_result.to_dict(), **weighted_averages}
+        agg_results["geometry"] = zone.geometry.unary_union
+        summed_gdf = gpd.GeoDataFrame([agg_results], geometry="geometry")
+        summed_gdf["area"] = summed_gdf["geometry"].area
 
         return_data = {
             "areas": zone.to_json(),
