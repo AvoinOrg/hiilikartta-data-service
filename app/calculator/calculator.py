@@ -219,6 +219,34 @@ class CarbonCalculator:
                 ground_carbon_sum * ha_to_grid
             )
 
+            zone.at[index, "bio_carbon_sum_nochange_2035"] = bio_carbon_sum * 1.1
+            zone.at[index, "ground_carbon_sum_nochange_2035"] = ground_carbon_sum
+            zone.at[index, "bio_carbon_per_area_nochange_2035"] = (
+                bio_carbon_sum * 1.1 * ha_to_grid
+            )
+            zone.at[index, "ground_carbon_per_area_nochange_2035"] = (
+                ground_carbon_sum * ha_to_grid
+            )
+
+            zone.at[index, "bio_carbon_sum_nochange_2045"] = bio_carbon_sum * 1.2
+            zone.at[index, "ground_carbon_sum_nochange_2045"] = ground_carbon_sum
+            zone.at[index, "bio_carbon_per_area_nochange_2045"] = (
+                bio_carbon_sum * 1.2 * ha_to_grid
+            )
+            zone.at[index, "ground_carbon_per_area_nochange_2045"] = (
+                ground_carbon_sum * ha_to_grid
+            )
+
+            zone.at[index, "bio_carbon_sum_nochange_2055"] = bio_carbon_sum * 1.3
+            zone.at[index, "ground_carbon_sum_nochange_2055"] = ground_carbon_sum
+            zone.at[index, "bio_carbon_per_area_nochange_2055"] = (
+                bio_carbon_sum * 1.3 * ha_to_grid
+            )
+            zone.at[index, "ground_carbon_per_area_nochange_2055"] = (
+                ground_carbon_sum * ha_to_grid
+            )
+
+            # planned values
             zone.at[index, "bio_carbon_sum_planned_now"] = 0
             zone.at[index, "ground_carbon_sum_planned_now"] = ground_carbon_sum
             zone.at[index, "bio_carbon_per_area_planned_now"] = 0
