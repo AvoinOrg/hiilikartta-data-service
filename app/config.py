@@ -11,6 +11,7 @@ load_dotenv()
 env_vars = os.environ
 logger = get_logger(__name__)
 
+
 class Settings(BaseSettings):
     """
     BaseSettings, from Pydantic, validates the data so that when we create an instance of Settings,
