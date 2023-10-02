@@ -92,6 +92,7 @@ class CarbonCalculator:
                 name=f"polygon_{row['id']}",
             )
             da.rio.set_crs(crs_code, inplace=True)
+            da = da * ha_to_grid
             da.attrs["df_index"] = index
             da = da.interp(y=ds.y, x=ds.x)
             data_arrays.append(da)
@@ -202,78 +203,82 @@ class CarbonCalculator:
 
         zone["area"] = zone["geometry"].area
 
+        ha_conversion_factor = 10000  # 1 hectare is 10,000 square meters
+
         for da in area_das:
             bio_carbon_sum = (da * variables_ds["bio_carbon"]).sum(skipna=True).item()
             ground_carbon_sum = (
                 (da * variables_ds["ground_carbon"]).sum(skipna=True).item()
             )
-            index = da.attrs[
-                "df_index"
-            ]  # Get the appropriate index/row from the DataArray attribute
+            index = da.attrs["df_index"]
+            area = zone.at[index, "geometry"].area
+
             zone.at[index, "bio_carbon_sum_nochange_now"] = bio_carbon_sum
             zone.at[index, "ground_carbon_sum_nochange_now"] = ground_carbon_sum
             zone.at[index, "bio_carbon_per_area_nochange_now"] = (
-                bio_carbon_sum * ha_to_grid
-            )
+                bio_carbon_sum / area
+            ) * ha_conversion_factor
             zone.at[index, "ground_carbon_per_area_nochange_now"] = (
-                ground_carbon_sum * ha_to_grid
-            )
+                ground_carbon_sum / area
+            ) * ha_conversion_factor
 
             zone.at[index, "bio_carbon_sum_nochange_2035"] = bio_carbon_sum * 1.1
             zone.at[index, "ground_carbon_sum_nochange_2035"] = ground_carbon_sum
             zone.at[index, "bio_carbon_per_area_nochange_2035"] = (
-                bio_carbon_sum * 1.1 * ha_to_grid
-            )
+                (bio_carbon_sum * 1.1) / area
+            ) * ha_conversion_factor
             zone.at[index, "ground_carbon_per_area_nochange_2035"] = (
-                ground_carbon_sum * ha_to_grid
-            )
+                ground_carbon_sum / area
+            ) * ha_conversion_factor
 
             zone.at[index, "bio_carbon_sum_nochange_2045"] = bio_carbon_sum * 1.2
             zone.at[index, "ground_carbon_sum_nochange_2045"] = ground_carbon_sum
             zone.at[index, "bio_carbon_per_area_nochange_2045"] = (
-                bio_carbon_sum * 1.2 * ha_to_grid
-            )
+                (bio_carbon_sum * 1.2) / area
+            ) * ha_conversion_factor
             zone.at[index, "ground_carbon_per_area_nochange_2045"] = (
-                ground_carbon_sum * ha_to_grid
-            )
+                ground_carbon_sum / area
+            ) * ha_conversion_factor
 
             zone.at[index, "bio_carbon_sum_nochange_2055"] = bio_carbon_sum * 1.3
             zone.at[index, "ground_carbon_sum_nochange_2055"] = ground_carbon_sum
             zone.at[index, "bio_carbon_per_area_nochange_2055"] = (
-                bio_carbon_sum * 1.3 * ha_to_grid
-            )
+                (bio_carbon_sum * 1.3) / area
+            ) * ha_conversion_factor
             zone.at[index, "ground_carbon_per_area_nochange_2055"] = (
-                ground_carbon_sum * ha_to_grid
-            )
+                ground_carbon_sum / area
+            ) * ha_conversion_factor
 
             # planned values
-            zone.at[index, "bio_carbon_sum_planned_now"] = 0
+            zone.at[index, "bio_carbon_sum_planned_now"] = bio_carbon_sum
             zone.at[index, "ground_carbon_sum_planned_now"] = ground_carbon_sum
-            zone.at[index, "bio_carbon_per_area_planned_now"] = 0
+            zone.at[index, "bio_carbon_per_area_planned_now"] = (
+                bio_carbon_sum / area
+            ) * ha_conversion_factor
             zone.at[index, "ground_carbon_per_area_planned_now"] = (
-                ground_carbon_sum * ha_to_grid
-            )
+                ground_carbon_sum / area
+            ) * ha_conversion_factor
 
             zone.at[index, "bio_carbon_sum_planned_2035"] = 0
             zone.at[index, "ground_carbon_sum_planned_2035"] = ground_carbon_sum
             zone.at[index, "bio_carbon_per_area_planned_2035"] = 0
             zone.at[index, "ground_carbon_per_area_planned_2035"] = (
-                ground_carbon_sum * ha_to_grid
-            )
+                ground_carbon_sum / area
+            ) * ha_conversion_factor
 
             zone.at[index, "bio_carbon_sum_planned_2045"] = 0
             zone.at[index, "ground_carbon_sum_planned_2045"] = ground_carbon_sum
             zone.at[index, "bio_carbon_per_area_planned_2045"] = 0
             zone.at[index, "ground_carbon_per_area_planned_2045"] = (
-                ground_carbon_sum * ha_to_grid
-            )
+                ground_carbon_sum / area
+            ) * ha_conversion_factor
 
             zone.at[index, "bio_carbon_sum_planned_2055"] = 0
             zone.at[index, "ground_carbon_sum_planned_2055"] = ground_carbon_sum
             zone.at[index, "bio_carbon_per_area_planned_2055"] = 0
             zone.at[index, "ground_carbon_per_area_planned_2055"] = (
-                ground_carbon_sum * ha_to_grid
-            )
+                ground_carbon_sum / area
+            ) * ha_conversion_factor
 
         sum_cols = [col for col in all_columns if "_sum" in col]
         sum_result = zone[sum_cols].sum()
