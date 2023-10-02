@@ -1,0 +1,58 @@
+version: "3.8"
+
+services:
+  app:
+    container_name: hiilikartta-data-service
+    restart: unless-stopped
+    build: .
+    env_file:
+      - ./.env
+    ports:
+      - "8000:80"
+    volumes:
+      - .:/app:z
+      - ./.cache:/root/.cache
+      - ./.vscode-server:/root/.vscode-server
+    entrypoint: ["/bin/bash", "/app/docker-entrypoint.prod.sh"]
+    networks:
+      - proxy-net
+  
+  traefik:
+    image: traefik:v2.10
+    container_name: traefik
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    command:
+      - --api.insecure=true
+      - --api.dashboard=true 
+      - --providers.docker=false
+      - --providers.file.filename=/etc/traefik/dynamic_conf.yml
+      - --providers.file.watch=true
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --entrypoints.web.http.redirections.entryPoint.to=websecure
+      - --entrypoints.web.http.redirections.entryPoint.scheme=https
+      - --entrypoints.web.http.redirections.entrypoint.permanent=true
+      - --certificatesresolvers.myresolver.acme.tlschallenge=true
+      - --certificatesresolvers.myresolver.acme.email=${DOMAIN_EMAIL}
+      - --certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json
+      # development acme server, without rate limits
+      # - --certificatesresolvers.myresolver.acme.caServer=https://acme-staging-v02.api.letsencrypt.org/directory
+      - --certificatesresolvers.myresolver.acme.caServer=https://acme-v02.api.letsencrypt.org/directory
+      - --log.filePath=/logs/traefik.log
+      - --log.level=INFO
+    ports:
+      - 80:80
+      - 443:443
+      - 8080:8080
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./letsencrypt:/letsencrypt
+      - ./dynamic_conf.yml:/etc/traefik/dynamic_conf.yml
+      - ${TRAEFIK_LOGS_PATH}:/logs
+    networks:
+      - proxy-net
+
+networks:
+  proxy-net:
