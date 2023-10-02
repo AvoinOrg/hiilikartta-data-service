@@ -266,3 +266,5 @@ data/*
 tests/data/*
 
 notebooks/temp/*
+
+letsencrypt
