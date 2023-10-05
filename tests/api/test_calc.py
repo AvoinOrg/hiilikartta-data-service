@@ -27,7 +27,7 @@ def fetched_data():
             status_response = client.get(f"/calculation/{calc_id}")
             if status_response.status_code == 200:
                 status = status_response.json()["status"]
-                if status == "completed":
+                if status == CalculationStatus.COMPLETED.value:
                     return status_response
         assert (
             False
@@ -39,23 +39,23 @@ def test_response_code(fetched_data):
 
 
 def test_areas_are_returned(fetched_data):
-    assert fetched_data.json()["areas"] != None
+    assert fetched_data.json()["data"]["areas"] != None
 
 
 def test_totals_are_returned(fetched_data):
-    assert fetched_data.json()["totals"] != None
+    assert fetched_data.json()["data"]["totals"] != None
 
 
 @pytest.fixture(scope="module")
 def gdf_response_areas_data(fetched_data):
-    gdf = gpd.read_file(fetched_data.json()["areas"])
+    gdf = gpd.read_file(fetched_data.json()["data"]["areas"])
     gdf.sort_values(by=["OBJECTID"], inplace=True)
     return gdf
 
 
 @pytest.fixture(scope="module")
 def gdf_response_totals_data(fetched_data):
-    gdf = gpd.read_file(fetched_data.json()["totals"])
+    gdf = gpd.read_file(fetched_data.json()["data"]["totals"])
     return gdf
 
 
