@@ -1,11 +1,22 @@
-from fastapi import FastAPI, Depends, UploadFile, Form, HTTPException, Response
+from fastapi import (
+    FastAPI,
+    Depends,
+    UploadFile,
+    Form,
+    HTTPException,
+    BackgroundTasks,
+    status,
+    Response,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 import gzip
 import json
+import uuid
 
 from app.database.database import get_db
 from app.calculator.calculator import CarbonCalculator
+from app.types.calculator import CalculationStatus
 
 app = FastAPI()
 
@@ -21,26 +32,67 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+calculations = {}
 
-@app.post("/calculate")
+
+async def background_calculation(file, zoning_col, db_session, calc_id):
+    cc = CarbonCalculator(file, zoning_col, db_session)
+    data = await cc.calculate()
+
+    if data == None:
+        calculations[calc_id] = {
+            "status": CalculationStatus.ERROR.value,
+            "message": "No data found for polygons.",
+        }
+    else:
+        json_str = json.dumps(data)
+        json_bytes = json_str.encode("utf-8")
+        gzipped_json = gzip.compress(json_bytes)
+        calculations[calc_id] = {
+            "status": CalculationStatus.COMPLETED.value,
+            "data": gzipped_json,
+        }
+
+
+@app.post("/calculation")
 async def calculate(
+    background_tasks: BackgroundTasks,
     file: UploadFile = Form(...),
     zoning_col: str = Form(...),
     db_session: AsyncSession = Depends(get_db),
 ):
-    cc = CarbonCalculator(file.file, zoning_col, db_session)
-    data = await cc.calculate()
+    calc_id = str(uuid.uuid4())
+    calculations[calc_id] = {"status": CalculationStatus.PROCESSING.value}
+    background_tasks.add_task(
+        background_calculation, file.file, zoning_col, db_session, calc_id
+    )
+    return {"status": CalculationStatus.STARTED.value, "id": calc_id}
 
-    # This probably no longer works. Figure out a better way to check for empty data.
-    if data == None:
-        raise HTTPException(status_code=400, detail="No data found for polygons.")
 
-    json_str = json.dumps(data)
+@app.get("/calculation/{calc_id}")
+async def get_calculation_status(calc_id: str):
+    data = calculations.get(calc_id)
+    if not data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Calculation not found."
+        )
 
-    # Gzipping the JSON string
-    json_bytes = json_str.encode("utf-8")
-    gzipped_json = gzip.compress(json_bytes)
+    if data["status"] == CalculationStatus.PROCESSING.value:
+        return Response(
+            content=data,
+            status_code=status.HTTP_202_ACCEPTED,
+        )
 
-    headers = {"Content-Encoding": "gzip", "Content-Type": "application/json"}
+    if data["status"] == CalculationStatus.ERROR.value:
+        return Response(
+            content=data,
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        )
 
-    return Response(content=gzipped_json, headers=headers)
+    if data["status"] == CalculationStatus.COMPLETED.value:
+        return data["result"]
+
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail="Unexpected calculation status.",
+    )
