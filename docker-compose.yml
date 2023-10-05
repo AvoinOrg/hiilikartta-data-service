@@ -15,7 +15,7 @@ services:
       # - ./.conda-pkgs:/root/conda/pkgs
       - ./.vscode-server:/root/.vscode-server
       # - ${REMOTE_DB_SSH_KEY}:/root/.ssh/remote_db_rsa:z
-      # - ${GIT_SSH_KEY}:/root/.ssh/id_rsa:z
+      - ${GIT_SSH_KEY}:/root/.ssh/id_rsa:z
     entrypoint: ["/bin/bash", "/app/docker-entrypoint.sh"]
 
 # volumes:
