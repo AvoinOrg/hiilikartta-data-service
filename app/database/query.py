@@ -84,7 +84,7 @@ async def fetch_ground_carbon_for_region(db_session: AsyncSession, wkt: str, crs
             f"""
                 SELECT
                     ST_AsTIFF(ST_UNION(rast), 'LZW') as tiff
-                    FROM hiilikartta_maaperanhiili_tcha
+                    FROM gtkjaluke_maaperanhiili_xxxx_tcha
                     WHERE ST_Intersects(
                         rast, 
                             ST_SetSRID(
