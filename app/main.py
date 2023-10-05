@@ -45,13 +45,18 @@ async def background_calculation(file, zoning_col, db_session, calc_id):
             "message": "No data found for polygons.",
         }
     else:
-        json_str = json.dumps(data)
-        json_bytes = json_str.encode("utf-8")
-        gzipped_json = gzip.compress(json_bytes)
         calculations[calc_id] = {
             "status": CalculationStatus.COMPLETED.value,
-            "data": gzipped_json,
+            "data": data,
         }
+
+
+async def zip_response_data(data):
+    json_str = json.dumps(data)
+    json_bytes = json_str.encode("utf-8")
+    gzipped_json = gzip.compress(json_bytes)
+
+    return gzipped_json
 
 
 @app.post("/calculation")
@@ -72,6 +77,9 @@ async def calculate(
 @app.get("/calculation/{calc_id}")
 async def get_calculation_status(calc_id: str):
     data = calculations.get(calc_id)
+
+    headers = {"Content-Encoding": "gzip"}
+
     if not data:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Calculation not found."
@@ -79,18 +87,24 @@ async def get_calculation_status(calc_id: str):
 
     if data["status"] == CalculationStatus.PROCESSING.value:
         return Response(
-            content=data,
+            content=await zip_response_data(data),
+            headers=headers,
             status_code=status.HTTP_202_ACCEPTED,
         )
 
     if data["status"] == CalculationStatus.ERROR.value:
         return Response(
-            content=data,
+            content=await zip_response_data(data),
+            headers=headers,
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         )
 
     if data["status"] == CalculationStatus.COMPLETED.value:
-        return data["result"]
+        return Response(
+            content=await zip_response_data(data),
+            status_code=status.HTTP_200_OK,
+            headers=headers,
+        )
 
     raise HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
