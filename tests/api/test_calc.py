@@ -4,6 +4,8 @@ import pytest
 from app.main import app
 import geopandas as gpd
 import numpy as np
+import time
+from app.types.calculator import CalculationStatus
 
 client = TestClient(app)
 
@@ -15,9 +17,21 @@ def fetched_data():
     with open(test_data_path, "rb") as f:
         files = {"file": ("testarea1.zip", f, "application/zip")}
         data = {"zoning_col": "kaavamerki"}
-        response = client.post("/calculate", data=data, files=files)
+        response = client.post("/calculation", data=data, files=files)
         assert response.status_code == 200
-        return response
+        calc_id = response.json()["id"]
+        status = "processing"
+        # Check the calculation status every 2 seconds for a max of 10 times (i.e., wait for up to 20 seconds).
+        for _ in range(10):
+            time.sleep(2)
+            status_response = client.get(f"/calculation/{calc_id}")
+            if status_response.status_code == 200:
+                status = status_response.json()["status"]
+                if status == "completed":
+                    return status_response
+        assert (
+            False
+        ), f"Calculation did not complete in expected time. Last known status: {status}"
 
 
 def test_response_code(fetched_data):
