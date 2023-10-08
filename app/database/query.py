@@ -32,7 +32,6 @@ async def fetch_variables_for_region(db_session: AsyncSession, wkt: str, crs: st
                 """
         )
 
-        await db_session.execute(text("SET postgis.gdal_enabled_drivers TO 'GTiff';"))
         result = await db_session.execute(statement, {"wkt": wkt, "crs": crs})
 
         rows = result.fetchall()
@@ -67,7 +66,6 @@ async def fetch_bio_carbon_for_region(db_session: AsyncSession, wkt: str, crs: s
                 """
         )
 
-        await db_session.execute(text("SET postgis.gdal_enabled_drivers TO 'GTiff';"))
         result = await db_session.execute(statement, {"wkt": wkt, "crs": crs})
 
         return result.fetchall()[0][0]
@@ -97,7 +95,6 @@ async def fetch_ground_carbon_for_region(db_session: AsyncSession, wkt: str, crs
                 """
         )
 
-        await db_session.execute(text("SET postgis.gdal_enabled_drivers TO 'GTiff';"))
         result = await db_session.execute(statement, {"wkt": wkt, "crs": crs})
 
         return result.fetchall()[0][0]
