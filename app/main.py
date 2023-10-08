@@ -86,7 +86,8 @@ async def calculate(
 
 
 @app.get("/calculation")
-async def get_calculation_status(calc_id: str = Request.query_params["id"]):
+async def get_calculation_status(request: Request):
+    calc_id: str = request.query_params.get("id")
     data = calculations.get(calc_id)
 
     headers = {"Content-Encoding": "gzip"}
