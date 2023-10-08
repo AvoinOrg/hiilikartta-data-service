@@ -7,6 +7,7 @@ from fastapi import (
     BackgroundTasks,
     status,
     Response,
+    Request,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -74,8 +75,8 @@ async def calculate(
     return {"status": CalculationStatus.STARTED.value, "id": calc_id}
 
 
-@app.get("/calculation/{calc_id}")
-async def get_calculation_status(calc_id: str):
+@app.get("/calculation")
+async def get_calculation_status(calc_id: str = Request.query_params["id"]):
     data = calculations.get(calc_id)
 
     headers = {"Content-Encoding": "gzip"}
