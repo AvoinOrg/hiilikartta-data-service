@@ -99,12 +99,12 @@ class CarbonCalculator:
             data_arrays.append(da)
 
         return data_arrays
-    
+
     async def get_dummy_variables(self, wkt_string: str, crs: str) -> xr.Dataset:
         # Parse the WKT string and get its bounding box
         polygon = wkt.loads(wkt_string)
         minx, miny, maxx, maxy = polygon.bounds
-        
+
         # Create coordinates that encompass the bounding box
         # For simplicity, let's use a 5x5 grid within the bounding box.
         x = np.linspace(minx, maxx, 5)
@@ -114,7 +114,6 @@ class CarbonCalculator:
         dummy_ds = xr.Dataset(coords={"x": x, "y": y})
 
         return dummy_ds
-
 
     async def get_variables(self, wkt: str, crs: str) -> xr.Dataset:
         rows, column_names = await fetch_variables_for_region(self.db_session, wkt, crs)
