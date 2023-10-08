@@ -11,20 +11,21 @@ client = TestClient(app)
 
 test_data_path = "tests/data/testarea1.zip"
 
+id = "testid"
+
 
 @pytest.fixture(scope="module")
 def fetched_data():
     with open(test_data_path, "rb") as f:
         files = {"file": ("testarea1.zip", f, "application/zip")}
-        data = {"zoning_col": "kaavamerki"}
+        data = {"zoning_col": "kaavamerki", "id": id}
         response = client.post("/calculation", data=data, files=files)
         assert response.status_code == 200
-        calc_id = response.json()["id"]
-        status = "processing"
+        status = response.json()["status"]
         # Check the calculation status every 2 seconds for a max of 10 times (i.e., wait for up to 20 seconds).
         for _ in range(10):
             time.sleep(2)
-            status_response = client.get(f"/calculation/{calc_id}")
+            status_response = client.get(f"/calculation?id={id}")
             if status_response.status_code == 200:
                 status = status_response.json()["status"]
                 if status == CalculationStatus.COMPLETED.value:
@@ -71,6 +72,54 @@ def test_totals_data_contains_items(gdf_response_areas_data):
 def gdf_test_data():
     test_gdf = gpd.read_file(test_data_path)
     return test_gdf
+
+
+# def test_data():
+#     with open(test_data_path, "rb") as f:
+#         time.sleep(5)
+#         files = {"file": ("testarea1.zip", f, "application/zip")}
+#         data = {"zoning_col": "kaavamerki", "id": id}
+#         response = client.post("/calculation", data=data, files=files)
+#         assert response.status_code == 200
+#         status = response.json()["status"]
+#         # Check the calculation status every 2 seconds for a max of 10 times (i.e., wait for up to 20 seconds).
+#         for _ in range(10):
+#             time.sleep(2)
+#             status_response = client.get(f"/calculation?id={id}")
+#             if status_response.status_code == 200:
+#                 status = status_response.json()["status"]
+#                 if status == CalculationStatus.COMPLETED.value:
+#                     return status_response
+#         assert (
+#             False
+#         ), f"Calculation did not complete in expected time. Last known status: {status}"
+
+
+# def test_calculation_can_be_started_again_after_being_completed():
+#     with open(test_data_path, "rb") as f:
+#         files = {"file": ("testarea1.zip", f, "application/zip")}
+#         data = {"zoning_col": "kaavamerki", "id": id}
+#         response = client.post("/calculation", data=data, files=files)
+#         assert response.status_code == 200
+#         status = response.json()["status"]
+#         # Check the calculation status every 2 seconds for a max of 10 times (i.e., wait for up to 20 seconds).
+#         for _ in range(20):
+#             time.sleep(2)
+#             status_response = client.get(f"/calculation?id={id}")
+#             if status_response.status_code == 200:
+#                 response = client.post("/calculation", data=data, files=files)
+#                 assert response.status_code == 200
+#         assert (
+#             False
+#         ), f"Calculation did not complete in expected time. Last known status: {status}"
+
+
+# def test_calculation_fails_if_duplicate_id_in_progress():
+#     with open(test_data_path, "rb") as f:
+#         files = {"file": ("testarea1.zip", f, "application/zip")}
+#         data = {"zoning_col": "kaavamerki", "id": id}
+#         response = client.post("/calculation", data=data, files=files)
+#         assert response.status_code == 400
 
 
 # def test_geojson_bio_values_correct(gdf_response_geojson_data, gdf_test_data):
