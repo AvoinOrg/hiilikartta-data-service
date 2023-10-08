@@ -65,14 +65,24 @@ async def calculate(
     background_tasks: BackgroundTasks,
     file: UploadFile = Form(...),
     zoning_col: str = Form(...),
+    id: str = Form(...),
     db_session: AsyncSession = Depends(get_db),
 ):
-    calc_id = str(uuid.uuid4())
-    calculations[calc_id] = {"status": CalculationStatus.PROCESSING.value}
+    if id in calculations:
+        if calculations[id]["status"] in [
+            CalculationStatus.PROCESSING.value,
+            CalculationStatus.STARTED.value,
+        ]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="A calculation with the provided ID is already in progress.",
+            )
+
+    calculations[id] = {"status": CalculationStatus.PROCESSING.value}
     background_tasks.add_task(
-        background_calculation, file.file, zoning_col, db_session, calc_id
+        background_calculation, file.file, zoning_col, db_session, id
     )
-    return {"status": CalculationStatus.STARTED.value, "id": calc_id}
+    return {"status": CalculationStatus.STARTED.value, "id": id}
 
 
 @app.get("/calculation")
