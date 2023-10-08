@@ -17,6 +17,11 @@ services:
       # - ${REMOTE_DB_SSH_KEY}:/root/.ssh/remote_db_rsa:z
       - ${GIT_SSH_KEY}:/root/.ssh/id_rsa:z
     entrypoint: ["/bin/bash", "/app/docker-entrypoint.sh"]
+    networks:
+      - climate-map-network
 
+networks:
+  climate-map-network:
+    external: true
 # volumes:
 #   poetry-cache:
