@@ -171,6 +171,21 @@ class CarbonCalculator:
 
             return ground_carbon_da
 
+    def dummy_combine_data(
+        self,
+        variables_ds: xr.Dataset,  # This is not used but still received
+        bio_carbon_da: xr.DataArray,
+        ground_carbon_da: xr.DataArray,
+    ):
+        ds = xr.Dataset(
+            {
+                "ground_carbon": ground_carbon_da.sel(band=1),
+                "bio_carbon": bio_carbon_da.sel(band=1),
+            }
+        )
+
+        return ds
+
     def combine_data(
         self,
         variables_ds: xr.Dataset,
@@ -187,6 +202,7 @@ class CarbonCalculator:
 
         self.zone = self.add_zone_factors(self.zone)
 
+        # TODO: Use actual variable data and actual combination method
         variables_ds, bio_carbon_da, ground_carbon_da = await asyncio.gather(
             # self.get_variables(wkt, crs),
             self.get_dummy_variables(wkt, crs),
@@ -194,7 +210,7 @@ class CarbonCalculator:
             self.get_ground_carbon(wkt, crs),
         )
 
-        variables_ds = self.combine_data(variables_ds, bio_carbon_da, ground_carbon_da)
+        variables_ds = self.dummy_combine_data(variables_ds, bio_carbon_da, ground_carbon_da)
 
         area_das = await self.get_area_das(self.zone, variables_ds)
 
