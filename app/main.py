@@ -70,7 +70,7 @@ async def calculate(
 ):
     if id in calculations:
         if calculations[id]["status"] in [
-            CalculationStatus.PROCESSING.value,
+            # CalculationStatus.PROCESSING.value,
             CalculationStatus.STARTED.value,
         ]:
             raise HTTPException(
