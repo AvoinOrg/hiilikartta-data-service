@@ -210,7 +210,9 @@ class CarbonCalculator:
             self.get_ground_carbon(wkt, crs),
         )
 
-        variables_ds = self.dummy_combine_data(variables_ds, bio_carbon_da, ground_carbon_da)
+        variables_ds = self.dummy_combine_data(
+            variables_ds, bio_carbon_da, ground_carbon_da
+        )
 
         area_das = await self.get_area_das(self.zone, variables_ds)
 
