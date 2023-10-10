@@ -41,18 +41,6 @@ StateAsyncSessionFactory = sessionmaker(
 )
 
 
-async def get_gis_db() -> AsyncGenerator:
-    async with GisAsyncSessionFactory() as session:
-        logger.debug(f"ASYNC Pool: {gis_engine.pool.status()}")
-        yield session
-
-
-async def get_state_db() -> AsyncGenerator:
-    async with StateAsyncSessionFactory() as session:
-        logger.debug(f"ASYNC Pool 2: {state_engine.pool.status()}")
-        yield session
-
-
 async def get_async_gis_db() -> AsyncGenerator:
     try:
         session: AsyncSession = GisAsyncSessionFactory()
