@@ -5,7 +5,7 @@ from app.main import app
 import geopandas as gpd
 import numpy as np
 import time
-from app.types.calculator import CalculationStatus
+from app.types.general import CalculationStatus
 
 client = TestClient(app)
 
