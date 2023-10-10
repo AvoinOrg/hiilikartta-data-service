@@ -17,27 +17,46 @@ class Settings(BaseSettings):
     BaseSettings, from Pydantic, validates the data so that when we create an instance of Settings,
      environment and testing will have types of str and bool, respectively.
     Parameters:
-    pg_user (str):
-    pg_pass (str):
-    pg_database: (str):
-    pg_port: (int):
-    pg_url: (URL):
+    gis_pg_user (str):
+    gis_pg_pass (str):
+    gis_pg_database: (str):
+    gis_pg_port: (int):
+    gis_pg_url: (URL):
+    data_pg_user (str):
+    data_pg_pass (str):
+    data_pg_database: (str):
+    data_pg_port: (int):
+    data_pg_url: (URL):
     Returns:
     instance of Settings
     """
 
-    pg_user: str = env_vars["PG_USER"]
-    pg_pass: str = env_vars["PG_PASSWORD"]
-    pg_host: str = env_vars["PG_HOST"]
-    pg_db: str = env_vars["PG_DB"]
-    pg_port: int = env_vars["PG_PORT"]
-    pg_url: URL = URL.create(
+    gis_pg_user: str = env_vars["GIS_PG_USER"]
+    gis_pg_pass: str = env_vars["GIS_PG_PASSWORD"]
+    gis_pg_host: str = env_vars["GIS_PG_HOST"]
+    gis_pg_db: str = env_vars["GIS_PG_DB"]
+    gis_pg_port: int = env_vars["GIS_PG_PORT"]
+    gis_pg_url: URL = URL.create(
         "postgresql+asyncpg",
-        username=pg_user,
-        password=pg_pass,
-        host=pg_host,
-        database=pg_db,
-        port=pg_port,
+        username=gis_pg_user,
+        password=gis_pg_pass,
+        host=gis_pg_host,
+        database=gis_pg_db,
+        port=gis_pg_port,
+    )
+
+    state_pg_user: str = env_vars["STATE_PG_USER"]
+    state_pg_pass: str = env_vars["STATE_PG_PASSWORD"]
+    state_pg_host: str = env_vars["STATE_PG_HOST"]
+    state_pg_db: str = env_vars["STATE_PG_DB"]
+    state_pg_port: int = env_vars["STATE_PG_PORT"]
+    state_pg_url: URL = URL.create(
+        "postgresql+asyncpg",
+        username=state_pg_user,
+        password=state_pg_pass,
+        host=state_pg_host,
+        database=state_pg_db,
+        port=state_pg_port,
     )
 
 
