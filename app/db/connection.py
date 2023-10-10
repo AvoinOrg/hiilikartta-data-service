@@ -47,7 +47,7 @@ StateAsyncSessionLocal = async_sessionmaker(
 
 async def get_async_gis_db() -> AsyncGenerator:
     try:
-        session: AsyncSession = GisAsyncSessionFactory()
+        session: AsyncSession = GisAsyncSessionLocal()
         logger.debug(f"ASYNC Pool: {gis_engine.pool.status()}")
         yield session
     except SQLAlchemyError as sql_ex:
@@ -64,7 +64,7 @@ async def get_async_gis_db() -> AsyncGenerator:
 
 async def get_async_state_db() -> AsyncGenerator:
     try:
-        session: AsyncSession = StateAsyncSessionFactory()
+        session: AsyncSession = StateAsyncSessionLocal()
         logger.debug(f"ASYNC Pool: {state_engine.pool.status()}")
         yield session
     except SQLAlchemyError as sql_ex:
