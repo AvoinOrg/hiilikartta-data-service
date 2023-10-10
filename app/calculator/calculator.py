@@ -9,7 +9,7 @@ import time
 import json
 from shapely import wkt
 
-from app.database.query import (
+from app.db.query import (
     fetch_variables_for_region,
     fetch_bio_carbon_for_region,
     fetch_ground_carbon_for_region,
