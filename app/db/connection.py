@@ -3,9 +3,11 @@ from http.client import HTTPException
 
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.engine import URL
+from contextlib import asynccontextmanager
+from sqlalchemy.pool import QueuePool
 
 from app import config
 from app.utils.logger import get_logger
@@ -20,6 +22,7 @@ gis_engine = create_async_engine(
     gis_url,
     future=True,
     echo=True,
+    poolclass=QueuePool,
     json_serializer=jsonable_encoder,
 )
 
@@ -27,17 +30,18 @@ state_engine = create_async_engine(
     state_url,
     future=True,
     echo=True,
+    poolclass=QueuePool,
     json_serializer=jsonable_encoder,
 )
 
 # expire_on_commit=False will prevent attributes from being expired
 # after commit.
-GisAsyncSessionFactory = sessionmaker(
-    gis_engine, autoflush=False, expire_on_commit=False, class_=AsyncSession
+GisAsyncSessionLocal = async_sessionmaker(
+    gis_engine, autoflush=False, expire_on_commit=False
 )
 
-StateAsyncSessionFactory = sessionmaker(
-    state_engine, autoflush=False, expire_on_commit=False, class_=AsyncSession
+StateAsyncSessionLocal = async_sessionmaker(
+    state_engine, autoflush=False, expire_on_commit=False
 )
 
 
