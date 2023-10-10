@@ -20,13 +20,13 @@ geopandas = "^0.12.1"
 matplotlib = "^3.6.2"
 geocube = "^0.3.3"
 asyncpg = "^0.27.0"
-sqlalchemy = {extras = ["asyncio"], version = "^1.4.45"}
 rich = "^12.6.0"
 pydantic = "^1.10.2"
 owslib = "^0.27.2"
 httpx = "^0.23.3"
 pytest = "^7.2.2"
 python-dotenv = "^1.0.0"
+sqlalchemy = "^2.0.21"
 
 [tool.poetry.group.dev.dependencies]
 jupyter = "^1.0.0"
