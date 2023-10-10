@@ -16,7 +16,7 @@ import json
 
 from app.calculator.calculator import CarbonCalculator
 from app.types.general import CalculationStatus
-from app.db.database import get_state_db, get_gis_db
+from app.db.connection import get_state_db, get_gis_db
 from app.calculator.calculator import CarbonCalculator
 from app.db.plan import (
     update_plan_status,
