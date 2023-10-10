@@ -13,16 +13,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 import gzip
 import json
+from uuid import UUID
 
 from app.calculator.calculator import CarbonCalculator
 from app.types.general import CalculationStatus
-from app.db.connection import get_state_db, get_gis_db
+from app.db.connection import get_async_gis_db, get_async_state_db
 from app.calculator.calculator import CarbonCalculator
 from app.db.plan import (
     update_plan_status,
     get_plan_by_id,
     create_plan,
 )  # Import the methods from plan.py
+from app.db.models.plan import Plan
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -73,22 +75,28 @@ async def calculate(
     background_tasks: BackgroundTasks,
     file: UploadFile = Form(...),
     zoning_col: str = Form(...),
-    id: str = Form(...),
-    state_db_session: AsyncSession = Depends(get_state_db),
-    gis_db_session: AsyncSession = Depends(get_gis_db),
+    id: str = Form(...),  # This id is a string
+    state_db_session: AsyncSession = Depends(get_async_state_db),
+    gis_db_session: AsyncSession = Depends(get_async_gis_db),
 ):
-    plan = await get_plan_by_id(state_db_session, id)
+    calc_id = UUID(id)  # Convert string id to UUID
+    plan = await get_plan_by_id(state_db_session, calc_id)
     if plan:
-        if plan.calculation_status in [CalculationStatus.PROCESSING.value]:
+        if plan.calculation_status == CalculationStatus.PROCESSING.value:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="A calculation with the provided ID is already in progress.",
             )
         await update_plan_status(
-            state_db_session, id, CalculationStatus.PROCESSING.value
+            state_db_session, calc_id, CalculationStatus.PROCESSING.value
         )
     else:
-        await create_plan(state_db_session, id, CalculationStatus.PROCESSING.value)
+        new_plan = Plan(
+            id=calc_id, calculation_status=CalculationStatus.PROCESSING.value
+        )  # Create a new Plan instance
+        await create_plan(
+            state_db_session, new_plan
+        )  # Pass the new plan to create_plan function
 
     background_tasks.add_task(
         background_calculation,
@@ -96,16 +104,16 @@ async def calculate(
         zoning_col,
         state_db_session,
         gis_db_session,
-        id,
+        calc_id,
     )
     return {"status": CalculationStatus.PROCESSING.value, "id": id}
 
 
 @app.get("/calculation")
 async def get_calculation_status(
-    request: Request, state_db_session: AsyncSession = Depends(get_state_db)
+    request: Request, state_db_session: AsyncSession = Depends(get_async_state_db)
 ):
-    calc_id: str = request.query_params.get("id")
+    calc_id: UUID = UUID(request.query_params.get("id"))
     plan = await get_plan_by_id(state_db_session, calc_id)
 
     headers = {"Content-Encoding": "gzip"}
@@ -115,23 +123,26 @@ async def get_calculation_status(
             status_code=status.HTTP_404_NOT_FOUND, detail="Calculation not found."
         )
 
-    if plan.calculation_status == CalculationStatus.PROCESSING.value:
+    content = {"status": plan.calculation_status.value, "id": str(calc_id)}
+
+    if plan.calculation_status == CalculationStatus.PROCESSING:
         return Response(
-            content=await zip_response_data(plan.data),
+            content=await zip_response_data(content),
             headers=headers,
             status_code=status.HTTP_202_ACCEPTED,
         )
 
-    if plan.calculation_status == CalculationStatus.ERROR.value:
+    if plan.calculation_status == CalculationStatus.ERROR:
         return Response(
-            content=await zip_response_data(plan.data),
+            content=await zip_response_data(content),
             headers=headers,
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         )
 
-    if plan.calculation_status == CalculationStatus.FINISHED.value:
+    if plan.calculation_status == CalculationStatus.FINISHED:
+        content.data = plan.data
         return Response(
-            content=await zip_response_data(plan.data),
+            content=await zip_response_data(content),
             status_code=status.HTTP_200_OK,
             headers=headers,
         )
