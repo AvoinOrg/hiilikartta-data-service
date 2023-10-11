@@ -128,7 +128,13 @@ async def calculate(
 async def get_calculation_status(
     request: Request, state_db_session: AsyncSession = Depends(get_async_state_db)
 ):
-    ui_id: UUID = UUID(request.query_params.get("id"))
+    try:
+        ui_id: UUID = UUID(request.query_params.get("id"))
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The provided ID is not a valid UUID.",
+        )
     plan = await get_plan_by_ui_id(state_db_session, ui_id)
 
     headers = {"Content-Encoding": "gzip"}
