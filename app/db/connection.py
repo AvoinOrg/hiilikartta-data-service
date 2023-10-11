@@ -4,10 +4,9 @@ from http.client import HTTPException
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.engine import URL
 from contextlib import asynccontextmanager
 from sqlalchemy.pool import QueuePool
+from typing import Callable, AsyncGenerator
 
 from app import config
 from app.utils.logger import get_logger
@@ -45,10 +44,13 @@ StateAsyncSessionLocal = async_sessionmaker(
 )
 
 
-async def get_async_gis_db() -> AsyncGenerator:
+@asynccontextmanager
+async def base_async_db_context(
+    session_generator: Callable[[], AsyncSession], logger_msg: str
+) -> AsyncGenerator:
     try:
-        session: AsyncSession = GisAsyncSessionLocal()
-        logger.debug(f"ASYNC Pool: {gis_engine.pool.status()}")
+        session: AsyncSession = session_generator()
+        logger.debug(logger_msg)
         yield session
     except SQLAlchemyError as sql_ex:
         await session.rollback()
@@ -63,17 +65,15 @@ async def get_async_gis_db() -> AsyncGenerator:
 
 
 async def get_async_state_db() -> AsyncGenerator:
-    try:
-        session: AsyncSession = StateAsyncSessionLocal()
-        logger.debug(f"ASYNC Pool: {state_engine.pool.status()}")
+    async with base_async_db_context(
+        StateAsyncSessionLocal, f"ASYNC Pool: {state_engine.pool.status()}"
+    ) as session:
         yield session
-    except SQLAlchemyError as sql_ex:
-        await session.rollback()
-        raise sql_ex
-    except HTTPException as http_ex:
-        await session.rollback()
-        raise http_ex
-    else:
-        await session.commit()
-    finally:
-        await session.close()
+
+
+@asynccontextmanager
+async def get_async_context_gis_db() -> AsyncGenerator:
+    async with base_async_db_context(
+        GisAsyncSessionLocal, f"ASYNC Pool: {gis_engine.pool.status()}"
+    ) as session:
+        yield session
