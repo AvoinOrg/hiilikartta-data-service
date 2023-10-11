@@ -34,7 +34,7 @@ async def fetch_variables_for_region(db_session: AsyncSession, wkt: str, crs: st
 
         result = await db_session.execute(statement, {"wkt": wkt, "crs": crs})
 
-        rows = result.fetchall()
+        rows = await result.fetchall()
 
         # Fetch column names
         column_names = list(result.keys())
@@ -68,7 +68,8 @@ async def fetch_bio_carbon_for_region(db_session: AsyncSession, wkt: str, crs: s
 
         result = await db_session.execute(statement, {"wkt": wkt, "crs": crs})
 
-        return result.fetchall()[0][0]
+        row = result.fetchone()
+        return row[0]
 
     except SQLAlchemyError as ex:
         logger.exception(ex)
@@ -97,7 +98,8 @@ async def fetch_ground_carbon_for_region(db_session: AsyncSession, wkt: str, crs
 
         result = await db_session.execute(statement, {"wkt": wkt, "crs": crs})
 
-        return result.fetchall()[0][0]
+        row = result.fetchone()
+        return row[0]
 
     except SQLAlchemyError as ex:
         logger.exception(ex)
