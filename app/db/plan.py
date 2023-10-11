@@ -25,16 +25,10 @@ async def create_plan(db_session: AsyncSession, plan: Plan) -> Plan:
     return plan
 
 
-async def update_plan_status(
-    db_session: AsyncSession, calc_id: UUID, status: str, data: Optional[dict] = None
-) -> bool:
-    plan = await get_plan_by_id(db_session, calc_id)
+async def update_plan(db_session: AsyncSession, plan: Plan) -> bool:
     if not plan:
         return False
 
-    plan.calculation_status = status
-    if data:
-        plan.data = data
     await db_session.commit()
     return True
 
