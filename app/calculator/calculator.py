@@ -8,6 +8,7 @@ import numpy as np
 import time
 import json
 from shapely import wkt
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.gis import (
     fetch_variables_for_region,
@@ -24,8 +25,7 @@ crs = "3067"
 
 
 class CarbonCalculator:
-    def __init__(self, shapefile, zoning_col, db_session):
-        self.db_session = db_session
+    def __init__(self, shapefile, zoning_col):
         self.zoning_col = zoning_col
         zone = gpd.read_file(shapefile)
         zone = zone.to_crs(f"EPSG:{crs}")
@@ -100,7 +100,9 @@ class CarbonCalculator:
 
         return data_arrays
 
-    async def get_dummy_variables(self, wkt_string: str, crs: str) -> xr.Dataset:
+    async def get_dummy_variables(
+        self, wkt_string: str, crs: str, db_session
+    ) -> xr.Dataset:
         # Parse the WKT string and get its bounding box
         polygon = wkt.loads(wkt_string)
         minx, miny, maxx, maxy = polygon.bounds
@@ -151,8 +153,10 @@ class CarbonCalculator:
 
         return variables_ds
 
-    async def get_bio_carbon(self, wkt: str, crs: str) -> xr.DataArray:
-        rast = await fetch_bio_carbon_for_region(self.db_session, wkt, crs)
+    async def get_bio_carbon(
+        self, wkt: str, crs: str, db_session: AsyncSession
+    ) -> xr.DataArray:
+        rast = await fetch_bio_carbon_for_region(db_session, wkt, crs)
 
         with rio.MemoryFile(rast).open() as dataset:
             bio_carbon_da = rxr.open_rasterio(dataset, masked=True)
@@ -161,8 +165,10 @@ class CarbonCalculator:
 
             return bio_carbon_da
 
-    async def get_ground_carbon(self, wkt: str, crs: str) -> xr.DataArray:
-        rast = await fetch_ground_carbon_for_region(self.db_session, wkt, crs)
+    async def get_ground_carbon(
+        self, wkt: str, crs: str, db_session: AsyncSession
+    ) -> xr.DataArray:
+        rast = await fetch_ground_carbon_for_region(db_session, wkt, crs)
 
         with rio.MemoryFile(rast).open() as dataset:
             ground_carbon_da = rxr.open_rasterio(dataset, masked=True)
@@ -197,18 +203,15 @@ class CarbonCalculator:
 
         return variables_ds
 
-    async def calculate(self):
+    async def calculate(self, db_session: AsyncSession) -> CalculationResult:
         wkt = self.zone.geometry.unary_union.wkt
 
         self.zone = self.add_zone_factors(self.zone)
 
         # TODO: Use actual variable data and actual combination method
-        variables_ds, bio_carbon_da, ground_carbon_da = await asyncio.gather(
-            # self.get_variables(wkt, crs),
-            self.get_dummy_variables(wkt, crs),
-            self.get_bio_carbon(wkt, crs),
-            self.get_ground_carbon(wkt, crs),
-        )
+        variables_ds = await self.get_dummy_variables(wkt, crs, db_session)
+        bio_carbon_da = await self.get_bio_carbon(wkt, crs, db_session)
+        ground_carbon_da = await self.get_ground_carbon(wkt, crs, db_session)
 
         variables_ds = self.dummy_combine_data(
             variables_ds, bio_carbon_da, ground_carbon_da
