@@ -3,12 +3,12 @@ import rasterio as rio
 import geopandas as gpd
 import xarray as xr
 from geocube.api.core import make_geocube
-import asyncio
 import numpy as np
 import time
 import json
 from shapely import wkt
 from sqlalchemy.ext.asyncio import AsyncSession
+from typing import TypedDict
 
 from app.db.gis import (
     fetch_variables_for_region,
@@ -22,6 +22,12 @@ logger = get_logger(__name__)
 ha_to_grid = 16 * 16 / 10000
 grid_to_ha = 1 / ha_to_grid
 crs = "3067"
+
+
+class CalculationResult(TypedDict):
+    areas: str
+    totals: str
+    metadata: str
 
 
 class CarbonCalculator:
@@ -338,7 +344,7 @@ class CarbonCalculator:
 
         summed_gdf.set_crs(epsg=3067, inplace=True)
 
-        return_data = {
+        return_data: CalculationResult = {
             "areas": zone.to_crs(epsg=4326).to_json(),
             "totals": summed_gdf.to_crs(epsg=4326).to_json(),
             "metadata": json.dumps({"timestamp": int(time.time())}),
