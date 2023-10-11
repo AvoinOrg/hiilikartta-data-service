@@ -79,15 +79,15 @@ async def zip_response_data(data):
 
 @app.post("/calculation")
 async def calculate(
+    request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = Form(...),
     zoning_col: str = Form(...),
-    id: str = Form(...),  # This id is a string
     user_id: str = Form(None),
     state_db_session: AsyncSession = Depends(get_async_state_db),
 ):
     try:
-        ui_id = UUID(id)  # Convert string id to UUID
+        ui_id: UUID = UUID(request.query_params.get("id"))
     except ValueError:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
