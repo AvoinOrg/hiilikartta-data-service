@@ -22,7 +22,7 @@ from app.db.connection import get_async_context_gis_db, get_async_state_db
 from app.calculator.calculator import CarbonCalculator
 from app.db.plan import (
     update_plan,
-    get_plan_by_id,
+    get_plan_by_ui_id,
     create_plan,
 )  # Import the methods from plan.py
 from app.db.models.plan import Plan
@@ -44,17 +44,17 @@ app.add_middleware(
 )
 
 
-async def background_calculation(file, zoning_col, state_db_session, calc_id):
+async def background_calculation(file, zoning_col, state_db_session, ui_id):
     async with get_async_context_gis_db() as gis_db_session:
         cc = CarbonCalculator(file, zoning_col)
         calc_data = await cc.calculate(gis_db_session)
 
-        plan = await get_plan_by_id(state_db_session, calc_id)
+        plan = await get_plan_by_ui_id(state_db_session, ui_id)
         if calc_data == None:
             plan.calculation_status = CalculationStatus.ERROR.value
             await update_plan(
                 state_db_session,
-                calc_id,
+                plan,
                 CalculationStatus.ERROR.value,
                 {"message": "No data found for polygons."},
             )
@@ -83,10 +83,18 @@ async def calculate(
     file: UploadFile = Form(...),
     zoning_col: str = Form(...),
     id: str = Form(...),  # This id is a string
+    user_id: str = Form(None),
     state_db_session: AsyncSession = Depends(get_async_state_db),
 ):
-    calc_id = UUID(id)  # Convert string id to UUID
-    plan = await get_plan_by_id(state_db_session, calc_id)
+    try:
+        ui_id = UUID(id)  # Convert string id to UUID
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The provided ID is not a valid UUID.",
+        )
+
+    plan = await get_plan_by_ui_id(state_db_session, ui_id)
     if plan:
         if plan.calculation_status == CalculationStatus.PROCESSING.value:
             raise HTTPException(
@@ -97,8 +105,11 @@ async def calculate(
         await update_plan(state_db_session, plan)
     else:
         new_plan = Plan(
-            id=calc_id, calculation_status=CalculationStatus.PROCESSING.value
-        )  # Create a new Plan instance
+            ui_id=ui_id,
+            calculation_status=CalculationStatus.PROCESSING.value,
+        )
+        if user_id:  # or any other condition to validate user_id
+            new_plan["user_id"] = user_id
         await create_plan(
             state_db_session, new_plan
         )  # Pass the new plan to create_plan function
@@ -108,17 +119,17 @@ async def calculate(
         file.file,
         zoning_col,
         state_db_session,
-        calc_id,
+        ui_id,
     )
-    return {"status": CalculationStatus.PROCESSING.value, "id": id}
+    return {"status": CalculationStatus.PROCESSING.value, "id": ui_id}
 
 
 @app.get("/calculation")
 async def get_calculation_status(
     request: Request, state_db_session: AsyncSession = Depends(get_async_state_db)
 ):
-    calc_id: UUID = UUID(request.query_params.get("id"))
-    plan = await get_plan_by_id(state_db_session, calc_id)
+    ui_id: UUID = UUID(request.query_params.get("id"))
+    plan = await get_plan_by_ui_id(state_db_session, ui_id)
 
     headers = {"Content-Encoding": "gzip"}
 
@@ -127,7 +138,7 @@ async def get_calculation_status(
             status_code=status.HTTP_404_NOT_FOUND, detail="Calculation not found."
         )
 
-    content = {"status": plan.calculation_status.value, "id": str(calc_id)}
+    content = {"status": plan.calculation_status.value, "id": str(ui_id)}
 
     if plan.calculation_status == CalculationStatus.PROCESSING:
         return Response(
