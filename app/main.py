@@ -140,7 +140,10 @@ async def get_calculation_status(
         )
 
     if plan.calculation_status == CalculationStatus.FINISHED:
-        content.data = plan.data
+        content["data"] = {
+            "totals": plan.report_totals,
+            "areas": plan.report_areas,
+        }
         return Response(
             content=await zip_response_data(content),
             status_code=status.HTTP_200_OK,
