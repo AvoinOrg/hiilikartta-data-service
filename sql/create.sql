@@ -2,7 +2,7 @@ CREATE TYPE calculation_status_enum AS ENUM ('PROCESSING', 'FINISHED', 'ERROR');
 
 CREATE TABLE plan (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    ui_id VARCHAR,
+    ui_id UUID UNIQUE,
     user_id VARCHAR,
     data JSONB,
     created_ts TIMESTAMP DEFAULT current_timestamp(0),
@@ -14,4 +14,7 @@ CREATE TABLE plan (
     report_totals JSONB
 );
 
+CREATE INDEX idx_plan_ui_id ON plan (ui_id);
+
 -- GRANT ALL PRIVILEGES ON TABLE plan TO <username>;
+-- ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO <username>;
