@@ -14,13 +14,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import gzip
 import json
 from uuid import UUID
+from datetime import datetime
 
 from app.calculator.calculator import CarbonCalculator
 from app.types.general import CalculationStatus
-from app.db.connection import get_async_gis_db, get_async_state_db
+from app.db.connection import get_async_context_gis_db, get_async_state_db
 from app.calculator.calculator import CarbonCalculator
 from app.db.plan import (
-    update_plan_status,
+    update_plan,
     get_plan_by_id,
     create_plan,
 )  # Import the methods from plan.py
@@ -43,23 +44,29 @@ app.add_middleware(
 )
 
 
-async def background_calculation(
-    file, zoning_col, state_db_session, gis_db_session, calc_id
-):
-    cc = CarbonCalculator(file, zoning_col, gis_db_session)
-    data = await cc.calculate()
+async def background_calculation(file, zoning_col, state_db_session, calc_id):
+    async with get_async_context_gis_db() as gis_db_session:
+        cc = CarbonCalculator(file, zoning_col)
+        calc_data = await cc.calculate(gis_db_session)
 
-    if data == None:
-        await update_plan_status(
-            state_db_session,
-            calc_id,
-            CalculationStatus.ERROR.value,
-            {"message": "No data found for polygons."},
-        )
-    else:
-        await update_plan_status(
-            state_db_session, calc_id, CalculationStatus.FINISHED.value, data
-        )
+        plan = await get_plan_by_id(state_db_session, calc_id)
+        if calc_data == None:
+            plan.calculation_status = CalculationStatus.ERROR.value
+            await update_plan(
+                state_db_session,
+                calc_id,
+                CalculationStatus.ERROR.value,
+                {"message": "No data found for polygons."},
+            )
+        else:
+            plan.report_areas = calc_data["areas"]
+            plan.report_totals = calc_data["totals"]
+            plan.calculated_ts = datetime.utcnow()
+            plan.calculation_status = CalculationStatus.FINISHED.value
+            await update_plan(
+                state_db_session,
+                plan,
+            )
 
 
 async def zip_response_data(data):
@@ -77,7 +84,6 @@ async def calculate(
     zoning_col: str = Form(...),
     id: str = Form(...),  # This id is a string
     state_db_session: AsyncSession = Depends(get_async_state_db),
-    gis_db_session: AsyncSession = Depends(get_async_gis_db),
 ):
     calc_id = UUID(id)  # Convert string id to UUID
     plan = await get_plan_by_id(state_db_session, calc_id)
@@ -87,9 +93,8 @@ async def calculate(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="A calculation with the provided ID is already in progress.",
             )
-        await update_plan_status(
-            state_db_session, calc_id, CalculationStatus.PROCESSING.value
-        )
+        plan.calculation_status = CalculationStatus.PROCESSING.value
+        await update_plan(state_db_session, plan)
     else:
         new_plan = Plan(
             id=calc_id, calculation_status=CalculationStatus.PROCESSING.value
@@ -103,7 +108,6 @@ async def calculate(
         file.file,
         zoning_col,
         state_db_session,
-        gis_db_session,
         calc_id,
     )
     return {"status": CalculationStatus.PROCESSING.value, "id": id}
