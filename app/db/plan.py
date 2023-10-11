@@ -13,6 +13,11 @@ async def get_plan_by_id(db_session: AsyncSession, calc_id: UUID) -> Optional[Pl
     return result.scalar_one_or_none()
 
 
+async def get_plan_by_ui_id(db_session: AsyncSession, calc_id: UUID) -> Optional[Plan]:
+    result = await db_session.execute(select(Plan).filter_by(ui_id=calc_id))
+    return result.scalar_one_or_none()
+
+
 async def get_all_plans(db_session: AsyncSession) -> List[Plan]:
     result = await db_session.execute(select(Plan))
     return result.scalars().all()
