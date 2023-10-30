@@ -1,98 +1,106 @@
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 import pytest
+from fastapi import FastAPI
+import asyncio
+from app.types.general import CalculationStatus
+import httpx
 from app.main import app
+import pytest_asyncio
 import geopandas as gpd
 import numpy as np
-import time
-from app.types.general import CalculationStatus
 
-client = TestClient(app)
 
 test_data_path = "tests/data/testarea1.zip"
+id = "d4ed5b10-2f1a-4c2a-a4e8-9a2d27a344da"
 
-id = "testid"
+
+@pytest.fixture(scope="session")
+def event_loop():
+    loop = asyncio.get_event_loop_policy().new_event_loop()
+    yield loop
+    loop.close()
 
 
-@pytest.fixture(scope="module")
-def fetched_data():
+@pytest_asyncio.fixture(scope="session")
+async def async_client_fixture():
+    async with httpx.AsyncClient(
+        app=app, base_url="http://localhost:8000"
+    ) as async_client:
+        yield async_client  # this allows the test to use the async_client
+
+
+@pytest_asyncio.fixture(scope="session")
+async def post_calculation_result(async_client_fixture):
     with open(test_data_path, "rb") as f:
         files = {"file": ("testarea1.zip", f, "application/zip")}
-        data = {"zoning_col": "kaavamerki", "id": id}
-        response = client.post("/calculation", data=data, files=files)
-        assert response.status_code == 200
-        status = response.json()["status"]
-        # Check the calculation status every 2 seconds for a max of 10 times (i.e., wait for up to 20 seconds).
-        for _ in range(10):
-            time.sleep(2)
-            status_response = client.get(f"/calculation?id={id}")
-            if status_response.status_code == 200:
-                status = status_response.json()["status"]
-                if status == CalculationStatus.COMPLETED.value:
-                    return status_response
-        assert (
-            False
-        ), f"Calculation did not complete in expected time. Last known status: {status}"
+        data = {"zoning_col": "kaavemerki"}
+        response = await async_client_fixture.post(
+            f"/calculation?id={id}", data=data, files=files
+        )
+        return response
 
 
-def test_response_code(fetched_data):
-    assert fetched_data.status_code == 200
+@pytest_asyncio.fixture(scope="session")
+async def get_calculation_result(async_client_fixture, post_calculation_result):
+    assert post_calculation_result.status_code == 200
+    status = post_calculation_result.json()["status"]
+    for _ in range(10):
+        await asyncio.sleep(2)
+        status_response = await async_client_fixture.get(f"/calculation?id={id}")
+        if status_response.status_code == 200:
+            status = status_response.json()["status"]
+            if status == CalculationStatus.FINISHED.value:
+                return status_response
+    assert (
+        False
+    ), f"Calculation did not complete in expected time. Last known status: {status}"
 
 
-def test_areas_are_returned(fetched_data):
-    assert fetched_data.json()["data"]["areas"] != None
+@pytest.mark.asyncio
+async def test_post_calculation(post_calculation_result):
+    assert post_calculation_result.status_code == 200
 
 
-def test_totals_are_returned(fetched_data):
-    assert fetched_data.json()["data"]["totals"] != None
+@pytest.mark.asyncio
+async def test_get_calculation(get_calculation_result):
+    assert get_calculation_result.status_code == 200
 
 
-@pytest.fixture(scope="module")
-def gdf_response_areas_data(fetched_data):
-    gdf = gpd.read_file(fetched_data.json()["data"]["areas"])
-    gdf.sort_values(by=["OBJECTID"], inplace=True)
+@pytest.mark.asyncio
+async def test_areas_are_returned(get_calculation_result):
+    assert get_calculation_result.json()["data"]["areas"] != None
+
+
+@pytest.mark.asyncio
+async def test_totals_are_returned(get_calculation_result):
+    assert get_calculation_result.json()["data"]["totals"] != None
+
+
+@pytest_asyncio.fixture(scope="session")
+async def gdf_response_areas_data(get_calculation_result):
+    gdf = gpd.GeoDataFrame(get_calculation_result.json()["data"]["areas"])
     return gdf
 
 
-@pytest.fixture(scope="module")
-def gdf_response_totals_data(fetched_data):
-    gdf = gpd.read_file(fetched_data.json()["data"]["totals"])
+@pytest.fixture(scope="session")
+async def gdf_response_totals_data(get_calculation_result):
+    gdf = gpd.GeoDataFrame(get_calculation_result.json()["data"]["totals"])
     return gdf
 
 
-def test_areas_data_contains_items(gdf_response_areas_data):
+@pytest.mark.asyncio
+async def test_areas_data_contains_items(gdf_response_areas_data):
     assert len(gdf_response_areas_data) > 0
 
 
-def test_totals_data_contains_items(gdf_response_areas_data):
+@pytest.mark.asyncio
+async def test_totals_data_contains_items(gdf_response_areas_data):
     assert len(gdf_response_areas_data) > 0
 
 
-@pytest.fixture(scope="module")
-def gdf_test_data():
-    test_gdf = gpd.read_file(test_data_path)
-    return test_gdf
-
-
-# def test_data():
-#     with open(test_data_path, "rb") as f:
-#         time.sleep(5)
-#         files = {"file": ("testarea1.zip", f, "application/zip")}
-#         data = {"zoning_col": "kaavamerki", "id": id}
-#         response = client.post("/calculation", data=data, files=files)
-#         assert response.status_code == 200
-#         status = response.json()["status"]
-#         # Check the calculation status every 2 seconds for a max of 10 times (i.e., wait for up to 20 seconds).
-#         for _ in range(10):
-#             time.sleep(2)
-#             status_response = client.get(f"/calculation?id={id}")
-#             if status_response.status_code == 200:
-#                 status = status_response.json()["status"]
-#                 if status == CalculationStatus.COMPLETED.value:
-#                     return status_response
-#         assert (
-#             False
-#         ), f"Calculation did not complete in expected time. Last known status: {status}"
+# @pytest.fixture(scope="session")
+# def gdf_test_data():
+#     test_gdf = gpd.read_file(test_data_path)
+#     return test_gdf
 
 
 # def test_calculation_can_be_started_again_after_being_completed():
@@ -122,12 +130,13 @@ def gdf_test_data():
 #         assert response.status_code == 400
 
 
-# def test_geojson_bio_values_correct(gdf_response_geojson_data, gdf_test_data):
-#     bio_carbon_values = gdf_response_geojson_data["bio_carbon_per_area"].values
+# @pytest.mark.asyncio
+# async def test_geojson_bio_values_correct(gdf_response_areas_data, gdf_test_data):
+#     bio_carbon_values = gdf_response_areas_data["bio_carbon_per_area"].values
 
 #     hiili_mets_values = gdf_test_data["hiili_mets"].values
 
-#     print(gdf_response_geojson_data["bio_carbon_per_area"])
+#     print(gdf_response_areas_data["bio_carbon_per_area"])
 #     print(gdf_test_data["hiili_mets"])
 #     # print(gdf_response_geojson_data["bio_carbon_sum"])
 

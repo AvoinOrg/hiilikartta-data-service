@@ -27,6 +27,7 @@ httpx = "^0.23.3"
 pytest = "^7.2.2"
 python-dotenv = "^1.0.0"
 sqlalchemy = "^2.0.21"
+pytest-asyncio = "^0.21.1"
 
 [tool.poetry.group.dev.dependencies]
 jupyter = "^1.0.0"
