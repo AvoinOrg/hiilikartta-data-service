@@ -22,6 +22,7 @@ gis_engine = create_async_engine(
     future=True,
     echo=True,
     poolclass=QueuePool,
+    pool_recycle=290,
     json_serializer=jsonable_encoder,
 )
 
@@ -30,6 +31,7 @@ state_engine = create_async_engine(
     future=True,
     echo=True,
     poolclass=QueuePool,
+    pool_recycle=290,
     json_serializer=jsonable_encoder,
 )
 
