@@ -4,8 +4,7 @@ import geopandas as gpd
 import xarray as xr
 from geocube.api.core import make_geocube
 import numpy as np
-import time
-import json
+from datetime import datetime
 from shapely import wkt
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import TypedDict
@@ -347,7 +346,7 @@ class CarbonCalculator:
         return_data: CalculationResult = {
             "areas": zone.to_crs(epsg=4326).to_json(),
             "totals": summed_gdf.to_crs(epsg=4326).to_json(),
-            "metadata": json.dumps({"timestamp": int(time.time())}),
+            "metadata": {"timestamp": datetime.utcnow()},
         }
 
         return return_data
