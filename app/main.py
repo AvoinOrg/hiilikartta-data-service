@@ -1,3 +1,4 @@
+from app.utils.retry_decorator import retry_async
 from fastapi import (
     FastAPI,
     Depends,
@@ -43,7 +44,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
+@retry_async(retries=3, exceptions=(Exception,), delay=2)
 async def background_calculation(file, zoning_col, state_db_session, ui_id):
     async with get_async_context_gis_db() as gis_db_session:
         cc = CarbonCalculator(file, zoning_col)
@@ -61,7 +62,7 @@ async def background_calculation(file, zoning_col, state_db_session, ui_id):
         else:
             plan.report_areas = calc_data["areas"]
             plan.report_totals = calc_data["totals"]
-            plan.calculated_ts = datetime.utcnow()
+            plan.calculated_ts = calc_data["metadata"].get("timestamp")
             plan.calculation_status = CalculationStatus.FINISHED.value
             await update_plan(
                 state_db_session,
@@ -164,6 +165,11 @@ async def get_calculation_status(
         content["data"] = {
             "totals": plan.report_totals,
             "areas": plan.report_areas,
+            "metadata": {
+                "calculated_ts": int(plan.calculated_ts.timestamp())
+                if plan.calculated_ts
+                else None
+            },
         }
         return Response(
             content=await zip_response_data(content),
