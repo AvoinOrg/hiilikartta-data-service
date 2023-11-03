@@ -12,7 +12,6 @@ services:
     volumes:
       - .:/app:z
       - ./.cache:/root/.cache
-      - ./.vscode-server:/root/.vscode-server
     entrypoint: ["/bin/bash", "/app/docker-entrypoint.prod.sh"]
     networks:
       - proxy-net
