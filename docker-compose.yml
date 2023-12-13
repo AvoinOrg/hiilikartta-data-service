@@ -19,6 +19,10 @@ services:
     entrypoint: ["/bin/bash", "/app/docker-entrypoint.sh"]
     networks:
       - climate-map-network
+    deploy:
+      resources:
+        limits:
+          memory: 24G
 
 networks:
   climate-map-network:
