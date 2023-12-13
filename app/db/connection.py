@@ -1,4 +1,5 @@
 from collections.abc import AsyncGenerator
+from doctest import debug
 from http.client import HTTPException
 
 from fastapi.encoders import jsonable_encoder
@@ -16,6 +17,7 @@ logger = get_logger(__name__)
 global_settings = config.get_settings()
 gis_url = global_settings.gis_pg_url
 state_url = global_settings.state_pg_url
+debug = global_settings.is_debug
 
 gis_engine = create_async_engine(
     gis_url,
@@ -69,6 +71,21 @@ async def base_async_db_context(
 async def get_async_state_db() -> AsyncGenerator:
     async with base_async_db_context(
         StateAsyncSessionLocal, f"ASYNC Pool: {state_engine.pool.status()}"
+    ) as session:
+        yield session
+
+
+@asynccontextmanager
+async def get_async_context_state_db() -> AsyncGenerator:
+    async with base_async_db_context(
+        StateAsyncSessionLocal, f"ASYNC Pool: {state_engine.pool.status()}"
+    ) as session:
+        yield session
+
+
+async def get_async_gis_db() -> AsyncGenerator:
+    async with base_async_db_context(
+        GisAsyncSessionLocal, f"ASYNC Pool: {gis_engine.pool.status()}"
     ) as session:
         yield session
 
