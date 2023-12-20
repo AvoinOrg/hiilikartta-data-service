@@ -1,3 +1,5 @@
+import shutil
+import tempfile
 from app.utils.retry_decorator import retry_async
 from fastapi import (
     FastAPI,
@@ -15,7 +17,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import gzip
 import json
 from uuid import UUID
-from datetime import datetime
 
 from app.calculator.calculator import CarbonCalculator
 from app.types.general import CalculationStatus
@@ -43,6 +44,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 @retry_async(retries=3, exceptions=(Exception,), delay=2)
 async def background_calculation(file, zoning_col, state_db_session, ui_id):
@@ -115,9 +117,17 @@ async def calculate(
             state_db_session, new_plan
         )  # Pass the new plan to create_plan function
 
+    temp_file_path = None
+    with tempfile.NamedTemporaryFile(
+        delete=False, suffix=f"{ui_id}.zip", dir="/tmp"
+    ) as temp_file:
+        shutil.copyfileobj(file.file, temp_file)
+        temp_file_path = temp_file.name
+        temp_file.flush()
+
     background_tasks.add_task(
         background_calculation,
-        file.file,
+        temp_file_path,
         zoning_col,
         state_db_session,
         ui_id,
