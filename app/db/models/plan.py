@@ -31,7 +31,7 @@ class Plan(Base):
     )
     total_indices: Mapped[int] = Column(Integer)
     last_index: Mapped[int] = Column(Integer)
-    last_area_calc_status = Column(
+    last_area_calculation_status = Column(
         ENUM(CalculationStatus, name="calculation_status_enum"), index=True
     )
     calculated_ts: Mapped[datetime] = Column(DateTime)
