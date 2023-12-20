@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     BaseSettings, from Pydantic, validates the data so that when we create an instance of Settings,
      environment and testing will have types of str and bool, respectively.
     Parameters:
+    is_debug (bool):
     gis_pg_user (str):
     gis_pg_pass (str):
     gis_pg_database: (str):
@@ -31,11 +32,13 @@ class Settings(BaseSettings):
     instance of Settings
     """
 
+    is_debug = env_vars.get("DEBUG", "false").lower() in ["true", "1", "t", "y", "yes"]
+
     gis_pg_user: str = env_vars["GIS_PG_USER"]
     gis_pg_pass: str = env_vars["GIS_PG_PASSWORD"]
     gis_pg_host: str = env_vars["GIS_PG_HOST"]
     gis_pg_db: str = env_vars["GIS_PG_DB"]
-    gis_pg_port: int = env_vars["GIS_PG_PORT"]
+    gis_pg_port: int = int(env_vars["GIS_PG_PORT"])
     gis_pg_url: URL = URL.create(
         "postgresql+asyncpg",
         username=gis_pg_user,
@@ -49,7 +52,7 @@ class Settings(BaseSettings):
     state_pg_pass: str = env_vars["STATE_PG_PASSWORD"]
     state_pg_host: str = env_vars["STATE_PG_HOST"]
     state_pg_db: str = env_vars["STATE_PG_DB"]
-    state_pg_port: int = env_vars["STATE_PG_PORT"]
+    state_pg_port: int = int(env_vars["STATE_PG_PORT"])
     state_pg_url: URL = URL.create(
         "postgresql+asyncpg",
         username=state_pg_user,
