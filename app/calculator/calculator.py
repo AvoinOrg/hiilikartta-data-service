@@ -350,18 +350,6 @@ class CarbonCalculator:
 
         summed_gdf.set_crs(epsg=3067, inplace=True)
 
-        try:
-            logger.error("AFALSKJSAÖLKASFLKÖSFALKSFLKJSFLJKSFLJKFSALKJÖSFAÖLKJASF")
-            logger.error("AFALSKJSAÖLKASFLKÖSFALKSFLKJSFLJKSFLJKFSALKJÖSFAÖLKJASF")
-            logger.error("AFALSKJSAÖLKASFLKÖSFALKSFLKJSFLJKSFLJKFSALKJÖSFAÖLKJASF")
-            logger.error("AFALSKJSAÖLKASFLKÖSFALKSFLKJSFLJKSFLJKFSALKJÖSFAÖLKJASF")
-            logger.error("AFALSKJSAÖLKASFLKÖSFALKSFLKJSFLJKSFLJKFSALKJÖSFAÖLKJASF")
-            logger.error("AFALSKJSAÖLKASFLKÖSFALKSFLKJSFLJKSFLJKFSALKJÖSFAÖLKJASF")
-            logger.error(type(calcs_df))
-            logger.error(type(calcs_df.to_crs(epsg=4326)))
-        except Exception as e:
-            logger.error(e)
-
         return_data: CalculationResult = {
             "areas": calcs_df.to_crs(epsg=4326).to_json(),
             "totals": summed_gdf.to_crs(epsg=4326).to_json(),
