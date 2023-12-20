@@ -8,13 +8,17 @@ import numpy as np
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import TypedDict, List
-from app.calculator.utils import get_bm_curve_values_for_years_mabp, get_overlap_mask
 
+from app.calculator.utils import get_bm_curve_values_for_years_mabp, get_overlap_mask
 from app.db.gis import (
     fetch_bio_carbon_for_regions,
     fetch_ground_carbon_for_regions,
     fetch_rasters_for_regions,
     fetch_variables_for_ids,
+)
+from app.utils.data_loader import (
+    get_bm_curve_df,
+    get_area_multipliers_df,
 )
 from app.utils.logger import get_logger
 
@@ -177,10 +181,8 @@ class CarbonCalculator:
     #     return variables_ds
 
     async def calculate(self, db_session: AsyncSession) -> CalculationResult:
-        bm_curves_df = pd.read_csv("data/BiomassCurves.txt")
-        area_multipliers_df = pd.read_csv(
-            "data/area_multipliers.csv", index_col="zone_id"
-        )
+        bm_curves_df = get_bm_curve_df()
+        area_multipliers_df = get_area_multipliers_df()
         area_multipliers = []
 
         for index, row in self.zone.iterrows():
