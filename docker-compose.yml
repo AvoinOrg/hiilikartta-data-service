@@ -35,9 +35,6 @@ services:
       - ./project:/usr/src/app
       - .:/app:z
       - ./.cache:/root/.cache
-    environment:
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
     depends_on:
       - app
       - redis
