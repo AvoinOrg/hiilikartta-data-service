@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import gzip
 import json
 from uuid import UUID
+from contextlib import asynccontextmanager
 
 from app.calculator.calculator import CarbonCalculator
 from app.types.general import CalculationStatus
@@ -29,9 +30,25 @@ from app.db.plan import (
 )  # Import the methods from plan.py
 from app.db.models.plan import Plan
 from app.utils.logger import get_logger
+from app.utils.data_loader import load_area_multipliers, load_bm_curves, unload_files
 
 logger = get_logger(__name__)
-app = FastAPI()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup event
+    load_area_multipliers()
+    load_bm_curves()
+
+    yield
+
+    unload_files()
+
+
+
+
+app = FastAPI(lifespan=lifespan)
 
 origins = [
     "*",
