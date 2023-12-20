@@ -32,6 +32,7 @@ geopandas = "^0.14.1"
 fiona = "^1.9.5"
 shapely = "^2.0.2"
 celery = "^5.3.6"
+flower = "^2.0.1"
 
 [tool.poetry.group.dev.dependencies]
 jupyter = "^1.0.0"

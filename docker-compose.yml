@@ -42,6 +42,23 @@ services:
   redis:
     image: redis:7
 
+  dashboard:
+    build: .
+    env_file:
+      - ./.env
+    image: hiilikartta-data-service
+    command: poetry run celery --broker=redis://redis:6379/0 flower --port=5555
+    volumes:
+      - ./project:/usr/src/app
+      - .:/app:z
+      - ./.cache:/root/.cache
+    ports:
+      - 5556:5555
+    depends_on:
+      - app
+      - redis
+      - worker
+
 networks:
   climate-map-network:
     external: true
