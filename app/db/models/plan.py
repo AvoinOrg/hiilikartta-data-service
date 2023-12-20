@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, text
+from sqlalchemy import Column, String, DateTime, text, Integer
 from sqlalchemy.dialects.postgresql import UUID, JSONB, ENUM
 from sqlalchemy.orm import declarative_base, Mapped
 from app.types.general import CalculationStatus
@@ -28,6 +28,11 @@ class Plan(Base):
         default=datetime.utcnow,
         server_default=text("current_timestamp(0)"),
         onupdate=datetime.utcnow,
+    )
+    total_indices: Mapped[int] = Column(Integer)
+    last_index: Mapped[int] = Column(Integer)
+    last_area_calc_status = Column(
+        ENUM(CalculationStatus, name="calculation_status_enum"), index=True
     )
     calculated_ts: Mapped[datetime] = Column(DateTime)
     calculation_updated_ts: Mapped[datetime] = Column(DateTime)
