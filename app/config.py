@@ -18,6 +18,8 @@ class Settings(BaseSettings):
      environment and testing will have types of str and bool, respectively.
     Parameters:
     is_debug (bool):
+    celery_broker_url (str):
+    celery_result_backend (str):
     gis_pg_user (str):
     gis_pg_pass (str):
     gis_pg_database: (str):
@@ -33,6 +35,9 @@ class Settings(BaseSettings):
     """
 
     is_debug = env_vars.get("DEBUG", "false").lower() in ["true", "1", "t", "y", "yes"]
+
+    celery_broker_url: str = env_vars["CELERY_BROKER_URL"]
+    celery_result_backend: str = env_vars["CELERY_RESULT_BACKEND"]
 
     gis_pg_user: str = env_vars["GIS_PG_USER"]
     gis_pg_pass: str = env_vars["GIS_PG_PASSWORD"]
