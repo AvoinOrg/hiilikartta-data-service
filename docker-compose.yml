@@ -4,6 +4,7 @@ services:
   app:
     container_name: hiilikartta-data
     build: .
+    image: hiilikartta-data-service
     env_file:
       - ./.env
     ports:
@@ -23,6 +24,26 @@ services:
       resources:
         limits:
           memory: 24G
+
+  worker:
+    build: .
+    image: hiilikartta-data-service
+    command: poetry run celery -A app.worker.celery worker --loglevel=info
+    env_file:
+      - ./.env
+    volumes:
+      - ./project:/usr/src/app
+      - .:/app:z
+      - ./.cache:/root/.cache
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - app
+      - redis
+
+  redis:
+    image: redis:7
 
 networks:
   climate-map-network:
