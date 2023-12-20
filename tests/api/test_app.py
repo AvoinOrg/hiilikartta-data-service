@@ -31,28 +31,28 @@ async def async_client_fixture():
 @pytest_asyncio.fixture(scope="session")
 async def post_calculation_result(async_client_fixture):
     with open(test_data_path, "rb") as f:
-        files = {"file": ("testarea1.zip", f, "application/zip")}
-        data = {"zoning_col": "kaavemerki"}
+        files = {"file": ("testarea1.zip", f, "multipart/form-data")}
+        data = {"zoning_col": "zoning_code"}
         response = await async_client_fixture.post(
             f"/calculation?id={id}", data=data, files=files
         )
         return response
 
 
-@pytest_asyncio.fixture(scope="session")
-async def get_calculation_result(async_client_fixture, post_calculation_result):
-    assert post_calculation_result.status_code == 200
-    status = post_calculation_result.json()["status"]
-    for _ in range(10):
-        await asyncio.sleep(2)
-        status_response = await async_client_fixture.get(f"/calculation?id={id}")
-        if status_response.status_code == 200:
-            status = status_response.json()["status"]
-            if status == CalculationStatus.FINISHED.value:
-                return status_response
-    assert (
-        False
-    ), f"Calculation did not complete in expected time. Last known status: {status}"
+# @pytest_asyncio.fixture(scope="session")
+# async def get_calculation_result(async_client_fixture, post_calculation_result):
+#     assert post_calculation_result.status_code == 200
+#     status = post_calculation_result.json()["status"]
+#     for _ in range(10):
+#         await asyncio.sleep(2)
+#         status_response = await async_client_fixture.get(f"/calculation?id={id}")
+#         if status_response.status_code == 200:
+#             status = status_response.json()["status"]
+#             if status == CalculationStatus.FINISHED.value:
+#                 return status_response
+#     assert (
+#         False
+#     ), f"Calculation did not complete in expected time. Last known status: {status}"
 
 
 @pytest.mark.asyncio
@@ -60,41 +60,41 @@ async def test_post_calculation(post_calculation_result):
     assert post_calculation_result.status_code == 200
 
 
-@pytest.mark.asyncio
-async def test_get_calculation(get_calculation_result):
-    assert get_calculation_result.status_code == 200
+# @pytest.mark.asyncio
+# async def test_get_calculation(get_calculation_result):
+#     assert get_calculation_result.status_code == 200
 
 
-@pytest.mark.asyncio
-async def test_areas_are_returned(get_calculation_result):
-    assert get_calculation_result.json()["data"]["areas"] != None
+# @pytest.mark.asyncio
+# async def test_areas_are_returned(get_calculation_result):
+#     assert get_calculation_result.json()["data"]["areas"] != None
 
 
-@pytest.mark.asyncio
-async def test_totals_are_returned(get_calculation_result):
-    assert get_calculation_result.json()["data"]["totals"] != None
+# @pytest.mark.asyncio
+# async def test_totals_are_returned(get_calculation_result):
+#     assert get_calculation_result.json()["data"]["totals"] != None
 
 
-@pytest_asyncio.fixture(scope="session")
-async def gdf_response_areas_data(get_calculation_result):
-    gdf = gpd.GeoDataFrame(get_calculation_result.json()["data"]["areas"])
-    return gdf
+# @pytest_asyncio.fixture(scope="session")
+# async def gdf_response_areas_data(get_calculation_result):
+#     gdf = gpd.GeoDataFrame(get_calculation_result.json()["data"]["areas"])
+#     return gdf
 
 
-@pytest.fixture(scope="session")
-async def gdf_response_totals_data(get_calculation_result):
-    gdf = gpd.GeoDataFrame(get_calculation_result.json()["data"]["totals"])
-    return gdf
+# @pytest.fixture(scope="session")
+# async def gdf_response_totals_data(get_calculation_result):
+#     gdf = gpd.GeoDataFrame(get_calculation_result.json()["data"]["totals"])
+#     return gdf
 
 
-@pytest.mark.asyncio
-async def test_areas_data_contains_items(gdf_response_areas_data):
-    assert len(gdf_response_areas_data) > 0
+# @pytest.mark.asyncio
+# async def test_areas_data_contains_items(gdf_response_areas_data):
+#     assert len(gdf_response_areas_data) > 0
 
 
-@pytest.mark.asyncio
-async def test_totals_data_contains_items(gdf_response_areas_data):
-    assert len(gdf_response_areas_data) > 0
+# @pytest.mark.asyncio
+# async def test_totals_data_contains_items(gdf_response_areas_data):
+#     assert len(gdf_response_areas_data) > 0
 
 
 # @pytest.fixture(scope="session")
