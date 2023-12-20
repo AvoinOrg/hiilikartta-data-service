@@ -1,8 +1,8 @@
 import pandas as pd
 
-data_path = "../../data"
+data_path = "data"
 bm_curve_df = None
-area_multipliers = None
+area_multipliers_df = None
 
 
 def load_bm_curves():
@@ -12,13 +12,15 @@ def load_bm_curves():
 
 def load_area_multipliers():
     global area_multipliers_df
-    area_multipliers_df = pd.read_csv("data/area_multipliers.csv", index_col="zone_id")
+    area_multipliers_df = pd.read_csv(
+        f"{data_path}/area_multipliers.csv", index_col="zone_id"
+    )
 
 
 def get_area_multipliers_df() -> pd.DataFrame:
     if (area_multipliers_df is None) or (len(area_multipliers_df) == 0):
         load_area_multipliers()
-    return area_multipliers
+    return area_multipliers_df
 
 
 def get_bm_curve_df() -> pd.DataFrame:
