@@ -28,6 +28,7 @@ grid_to_ha = 16 * 16 / 10_000
 ha_to_grid = 1 / grid_to_ha
 sqm_to_ha = 1 / 10_000  # 1 hectare is 10,000 square meters
 crs = "3067"
+zoning_col = "zoning_code"
 
 
 class CalculationResult(TypedDict):
@@ -37,8 +38,7 @@ class CalculationResult(TypedDict):
 
 
 class CarbonCalculator:
-    def __init__(self, file, zoning_col):
-        self.zoning_col = zoning_col
+    def __init__(self, file):
         zone = gpd.read_file(file, index_col="id")
         zone = zone.sort_values(by="id")
         zone = zone.to_crs(f"EPSG:{crs}")
@@ -186,7 +186,7 @@ class CarbonCalculator:
         area_multipliers = []
 
         for index, row in self.zone.iterrows():
-            code = row["zoning_code"]
+            code = row[zoning_col]
 
             multiplier = 0
             if code in area_multipliers_df.index:
@@ -236,7 +236,7 @@ class CarbonCalculator:
             ground_carbon_masks.append(overlap_mask)
             i += 1
 
-        calcs_df = self.zone[["id", "geometry", "zoning_code"]].copy()
+        calcs_df = self.zone[["id", "geometry", zoning_col]].copy()
         calcs_df["area"] = self.zone.geometry.area
         calcs_df.set_crs(epsg=3067, inplace=True)
         calcs_df.set_geometry("geometry", inplace=True)

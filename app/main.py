@@ -102,7 +102,6 @@ async def calculate(
     request: Request,
     background_tasks: BackgroundTasks,
     file: UploadFile = Form(...),
-    zoning_col: str = Form(...),
     user_id: str = Form(None),
     state_db_session: AsyncSession = Depends(get_async_state_db),
 ):
