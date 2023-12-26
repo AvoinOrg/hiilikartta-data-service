@@ -18,6 +18,7 @@ import gzip
 import json
 from uuid import UUID
 from contextlib import asynccontextmanager
+import geopandas as gpd
 
 from app.calculator.calculator import CarbonCalculator
 from app.types.general import CalculationStatus
@@ -123,15 +124,29 @@ async def calculate(
         plan.calculation_status = CalculationStatus.PROCESSING.value
         await update_plan(state_db_session, plan)
     else:
-        new_plan = Plan(
-            ui_id=ui_id,
-            calculation_status=CalculationStatus.PROCESSING.value,
-        )
-        if user_id:  # or any other condition to validate user_id
-            new_plan["user_id"] = user_id
-        await create_plan(
-            state_db_session, new_plan
-        )  # Pass the new plan to create_plan function
+        temp_file_path = None
+        with tempfile.NamedTemporaryFile(
+            delete=True, suffix=f"{ui_id}.zip", dir="/tmp"
+        ) as temp_file:
+            shutil.copyfileobj(file.file, temp_file)
+            temp_file_path = temp_file.name
+            temp_file.flush()
+            data = gpd.read_file(temp_file_path, index_col="id")
+            data.set_crs("EPSG:4326", inplace=True)
+            total_indices = len(data)
+            data = data.to_json()
+            new_plan = Plan(
+                ui_id=ui_id,
+                calculation_status=CalculationStatus.PROCESSING.value,
+                data=data,
+                total_indices=total_indices,
+                last_index=-1,
+            )
+            if user_id:  # or any other condition to validate user_id
+                new_plan["user_id"] = user_id
+            await create_plan(
+                state_db_session, new_plan
+            )  # Pass the new plan to create_plan function
 
     temp_file_path = None
     with tempfile.NamedTemporaryFile(
