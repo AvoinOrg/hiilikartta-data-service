@@ -32,6 +32,7 @@ from app.db.plan import (
 from app.db.models.plan import Plan
 from app.utils.logger import get_logger
 from app.utils.data_loader import load_area_multipliers, load_bm_curves, unload_files
+from app.saq_worker import queue
 
 logger = get_logger(__name__)
 
@@ -45,8 +46,6 @@ async def lifespan(app: FastAPI):
     yield
 
     unload_files()
-
-
 
 
 app = FastAPI(lifespan=lifespan)
@@ -148,21 +147,8 @@ async def calculate(
                 state_db_session, new_plan
             )  # Pass the new plan to create_plan function
 
-    temp_file_path = None
-    with tempfile.NamedTemporaryFile(
-        delete=False, suffix=f"{ui_id}.zip", dir="/tmp"
-    ) as temp_file:
-        shutil.copyfileobj(file.file, temp_file)
-        temp_file_path = temp_file.name
-        temp_file.flush()
+    await queue.enqueue("calculate", ui_id=str(ui_id), timeout=60)
 
-    background_tasks.add_task(
-        background_calculation,
-        temp_file_path,
-        zoning_col,
-        state_db_session,
-        ui_id,
-    )
     return {"status": CalculationStatus.PROCESSING.value, "id": ui_id}
 
 
