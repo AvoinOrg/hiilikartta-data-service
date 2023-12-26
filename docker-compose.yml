@@ -27,37 +27,53 @@ services:
 
   worker:
     build: .
+    container_name: hiilikartta-data-worker
     image: hiilikartta-data-service
-    command: poetry run celery -A app.worker.celery worker --loglevel=info
+    command: poetry run saq app.saq_worker.settings --web
     env_file:
       - ./.env
-    volumes:
-      - ./project:/usr/src/app
-      - .:/app:z
-      - ./.cache:/root/.cache
-    depends_on:
-      - app
-      - redis
-
-  redis:
-    image: redis:7
-
-  dashboard:
-    build: .
-    env_file:
-      - ./.env
-    image: hiilikartta-data-service
-    command: poetry run celery --broker=redis://redis:6379/0 flower --port=5555
     volumes:
       - ./project:/usr/src/app
       - .:/app:z
       - ./.cache:/root/.cache
     ports:
-      - 5556:5555
+      - "${SAQ_WEB_PORT}:8080"
+    networks:
+      - climate-map-network
     depends_on:
-      - app
-      - redis
-      - worker
+      app:
+        condition: service_started
+      redis:
+        condition: service_started
+        
+
+  redis:
+    container_name: hiilikartta-data-redis
+    image: redis:latest
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - climate-map-network
+    # volumes:
+    #   - cache:/data
+
+  # dashboard:
+  #   build: .
+  #   env_file:
+  #     - ./.env
+  #   image: hiilikartta-data-service
+  #   command: poetry run celery --broker=redis://redis:6379/0 flower --port=5555
+  #   volumes:
+  #     - ./project:/usr/src/app
+  #     - .:/app:z
+  #     - ./.cache:/root/.cache
+  #   ports:
+  #     - 5556:5555
+  #   depends_on:
+  #     - app
+  #     - redis
+  #     - worker
 
 networks:
   climate-map-network:
