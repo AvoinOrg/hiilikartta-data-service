@@ -69,7 +69,7 @@ async def after_process(ctx):
     pass
 
 
-queue = Queue.from_url("redis://redis")
+queue = Queue.from_url(global_settings.redis_url)
 
 settings = {
     "queue": queue,
