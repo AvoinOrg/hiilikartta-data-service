@@ -8,6 +8,7 @@ import numpy as np
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import TypedDict, List
+import json
 
 from app.calculator.utils import get_bm_curve_values_for_years_mabp, get_overlap_mask
 from app.db.gis import (
@@ -38,9 +39,10 @@ class CalculationResult(TypedDict):
 
 
 class CarbonCalculator:
-    def __init__(self, file):
-        zone = gpd.read_file(file, index_col="id")
+    def __init__(self, data):
+        zone = gpd.GeoDataFrame.from_features(data["features"])
         zone = zone.sort_values(by="id")
+        zone.set_crs("EPSG:4326", inplace=True)
         zone = zone.to_crs(f"EPSG:{crs}")
         zone["buffered_geometry"] = zone.geometry.buffer(22.7)
 
