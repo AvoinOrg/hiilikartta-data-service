@@ -4,6 +4,7 @@ from sqlalchemy.dialects.postgresql import UUID, JSONB, ENUM
 from sqlalchemy.orm import declarative_base, Mapped
 from app.types.general import CalculationStatus
 from uuid import uuid4
+from typing import Any
 
 Base = declarative_base()
 
@@ -19,7 +20,7 @@ class Plan(Base):
     )
     ui_id: Mapped[str] = Column(UUID)
     user_id: Mapped[str] = Column(String)
-    data: Mapped[dict] = Column(JSONB)
+    data: Mapped[dict[str, Any]] = Column(JSONB)
     created_ts: Mapped[datetime] = Column(
         DateTime, default=datetime.utcnow, server_default=text("current_timestamp(0)")
     )
