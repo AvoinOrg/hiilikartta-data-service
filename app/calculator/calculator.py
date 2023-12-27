@@ -244,15 +244,9 @@ class CarbonCalculator:
         calcs_df.set_geometry("geometry", inplace=True)
 
         sum_cols = []
-        current_year_suffix = "now"
-        years = [
-            "2030",
-            "2040",
-            "2050",
-            "2060",
-            "2070",
-            "2080",
-        ]
+        current_year = datetime.now().year
+        years_int = list(range(current_year, current_year + 70, 10))
+        years = [str(year) for year in years_int]
 
         bm_curve_values, bm_curve_masks = await get_bm_curve_values_for_years_mabp(
             rasts, years, bm_curves_df, variables_dict, rast_overlaps
@@ -279,8 +273,6 @@ class CarbonCalculator:
             if suffix == "planned":
                 use_multiplier = True
 
-            col = f"{base_col}_{suffix}_{current_year_suffix}"
-            calcs_df[col] = base_vals
             for year in years:
                 vals = []
 
@@ -288,7 +280,7 @@ class CarbonCalculator:
                     val = base_vals[idx]
                     if year_dict is not None:
                         val += year_dict[year] * grid_to_ha
-                    if use_multiplier:
+                    if use_multiplier and year is not str(current_year):
                         vals.append(val * area_multipliers[idx])
                     else:
                         vals.append(val)
@@ -315,14 +307,12 @@ class CarbonCalculator:
             if suffix == "planned":
                 use_multiplier = True
 
-            col = f"{base_col}_{suffix}_{current_year_suffix}"
-            calcs_df[col] = base_vals
             for year in years:
                 vals = []
 
                 for idx, base_val in enumerate(base_vals):
                     val = base_val
-                    if use_multiplier:
+                    if use_multiplier and year is not str(current_year):
                         vals.append(val * area_multipliers[idx])
                     else:
                         vals.append(val)
