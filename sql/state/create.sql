@@ -4,6 +4,7 @@ CREATE TABLE plan (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     ui_id UUID UNIQUE,
     user_id VARCHAR,
+    name VARCHAR,
     data JSONB,
     created_ts TIMESTAMP DEFAULT current_timestamp(0),
     updated_ts TIMESTAMP DEFAULT current_timestamp(0),

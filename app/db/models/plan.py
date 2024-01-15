@@ -19,6 +19,7 @@ class Plan(Base):
         server_default=text("gen_random_uuid()"),
     )
     ui_id: Mapped[str] = Column(UUID)
+    name: Mapped[str] = Column(String)
     user_id: Mapped[str] = Column(String)
     data: Mapped[dict[str, Any]] = Column(JSONB)
     created_ts: Mapped[datetime] = Column(

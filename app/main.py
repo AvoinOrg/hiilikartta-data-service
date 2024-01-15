@@ -193,6 +193,7 @@ async def get_calculation_status(
             "totals": plan.report_totals,
             "areas": plan.report_areas,
             "metadata": {
+                "report_name": plan.name,
                 "calculated_ts": int(plan.calculated_ts.timestamp())
                 if plan.calculated_ts
                 else None
