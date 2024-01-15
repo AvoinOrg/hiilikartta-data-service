@@ -30,7 +30,7 @@ async def calculate(ctx, *, ui_id: str):
             calc_data = await cc.calculate(gis_db_session)
 
         async with get_async_context_state_db() as state_db_session:
-            plan = await get_plan_by_ui_id(state_db_session, ui_id)
+            plan = await get_plan_by_ui_id(state_db_session, UUID(ui_id))
             if calc_data == None:
                 plan.calculation_status = CalculationStatus.ERROR.value
                 await update_plan(
