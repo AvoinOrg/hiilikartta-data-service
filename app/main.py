@@ -196,7 +196,7 @@ async def get_calculation_status(
                 "report_name": plan.name,
                 "calculated_ts": int(plan.calculated_ts.timestamp())
                 if plan.calculated_ts
-                else None
+                else None,
             },
         }
         return Response(
