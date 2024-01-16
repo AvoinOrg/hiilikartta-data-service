@@ -19,6 +19,7 @@ import json
 from uuid import UUID
 from contextlib import asynccontextmanager
 import geopandas as gpd
+from typing import Dict, Any
 
 from app.calculator.calculator import CarbonCalculator
 from app.types.general import CalculationStatus
@@ -216,4 +217,48 @@ async def get_calculation_status(
     raise HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         detail="Unexpected calculation status.",
+    )
+
+
+@app.get("/plan/external")
+async def get_plan(
+    request: Request, state_db_session: AsyncSession = Depends(get_async_state_db)
+):
+    try:
+        ui_id: UUID = UUID(request.query_params.get("id"))
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The provided ID is not a valid UUID.",
+        )
+    plan = await get_plan_by_ui_id(state_db_session, ui_id)
+    print(plan)
+
+    headers = {"Content-Encoding": "gzip"}
+
+    if not plan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Calculation not found."
+        )
+
+    content: Dict[str, Any] = {
+        "id": str(ui_id),
+        "name": plan.name,
+    }
+
+    if plan.calculation_status == CalculationStatus.FINISHED:
+        content["report_data"] = {
+            "totals": plan.report_totals,
+            "areas": plan.report_areas,
+            "metadata": {
+                "calculated_ts": int(plan.calculated_ts.timestamp())
+                if plan.calculated_ts
+                else None,
+            },
+        }
+
+    return Response(
+        content=await zip_response_data(content),
+        status_code=status.HTTP_200_OK,
+        headers=headers,
     )
