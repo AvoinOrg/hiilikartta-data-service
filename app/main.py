@@ -136,6 +136,7 @@ async def calculate(
             data = data.to_json()
             new_plan = Plan(
                 ui_id=ui_id,
+                name=name,
                 calculation_status=CalculationStatus.PROCESSING.value,
                 data=data,
                 total_indices=total_indices,
