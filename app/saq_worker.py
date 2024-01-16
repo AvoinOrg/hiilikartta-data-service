@@ -18,6 +18,12 @@ logger = get_logger(__name__)
 global_settings = config.get_settings()
 
 
+# class CalculationResult(TypedDict):
+#     areas: str
+#     totals: str
+#     metadata: str
+
+
 async def calculate(ctx, *, ui_id: str):
     plan = None
     async with get_async_context_state_db() as state_db_session:
@@ -48,6 +54,10 @@ async def calculate(ctx, *, ui_id: str):
                     state_db_session,
                     plan,
                 )
+
+
+async def calculate_totals(ctx, *, ui_id: str):
+    pass
 
 
 async def startup(ctx):
