@@ -15,7 +15,6 @@ services:
     entrypoint: ["/bin/bash", "/app/docker-entrypoint.prod.sh"]
     networks:
       - proxy-net
-    restart: unless-stopped
 
   worker:
     build: .
@@ -47,7 +46,6 @@ services:
       - "6379:6379"
     networks:
       - proxy-net
-    restart: unless-stopped
   
   traefik:
     image: traefik:v2.10
@@ -85,7 +83,6 @@ services:
       - ${TRAEFIK_LOGS_PATH}:/logs
     networks:
       - proxy-net
-    restart: unless-stopped
 
 networks:
   proxy-net:
