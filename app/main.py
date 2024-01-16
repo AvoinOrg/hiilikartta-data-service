@@ -113,6 +113,13 @@ async def calculate(
             detail="The provided ID is not a valid UUID.",
         )
 
+    name = request.query_params.get("name")
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Name parameter is missing.",
+        )
+
     plan = await get_plan_by_ui_id(state_db_session, ui_id)
     if plan:
         if plan.calculation_status == CalculationStatus.PROCESSING.value:
