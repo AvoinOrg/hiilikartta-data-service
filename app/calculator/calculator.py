@@ -245,7 +245,7 @@ class CarbonCalculator:
 
         sum_cols = []
         current_year = datetime.now().year
-        years_int = list(range(current_year, current_year + 70, 10))
+        years_int = [current_year] + list(range(2030, 2100, 5))
         years = [str(year) for year in years_int]
 
         bm_curve_values, bm_curve_masks = await get_bm_curve_values_for_years_mabp(
