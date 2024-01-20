@@ -46,7 +46,14 @@ class CarbonCalculator:
         zone.set_geometry("geometry", inplace=True)
         zone.set_crs("EPSG:4326", inplace=True)
         zone = zone.to_crs(f"EPSG:{crs}")
-        zone["buffered_geometry"] = zone.geometry.buffer(22.7)
+
+        self.simplify_calcs = False
+        # Simplify calculations for large areas
+        if zone.area.sum() > 50000:
+            self.simplify_calcs = True
+
+        if not self.simplify_calcs:
+            zone["buffered_geometry"] = zone.geometry.buffer(22.7)
 
         self.zone: gpd.GeoDataFrame = zone
         self.zone_raster = None
@@ -223,13 +230,20 @@ class CarbonCalculator:
 
             area_multipliers.append(multiplier)
 
-        wkt_list = self.zone.buffered_geometry.to_wkt().tolist()
+        wkt_list = []
+        if self.simplify_calcs:
+            wkt_list = self.zone.geometry.to_wkt().tolist()
+        else:
+            wkt_list = self.zone.buffered_geometry.to_wkt().tolist()
+
         rasts = await self.get_rasts(db_session, wkt_list=wkt_list, crs=crs)
 
         i = 0
         rast_overlaps = []
         for rast in rasts:
-            overlap_mask = get_overlap_mask(rast, self.zone.iloc[i].geometry)
+            overlap_mask = get_overlap_mask(
+                rast, self.zone.iloc[i].geometry, self.simplify_calcs
+            )
             rast = rast.where(overlap_mask != 0, np.nan)
             rast_overlaps.append(overlap_mask)
             i += 1
@@ -252,7 +266,9 @@ class CarbonCalculator:
         bio_carbon_masks = []
         i = 0
         for rast in bio_carbon_rasts:
-            overlap_mask = get_overlap_mask(rast, self.zone.iloc[i].geometry)
+            overlap_mask = get_overlap_mask(
+                rast, self.zone.iloc[i].geometry, self.simplify_calcs
+            )
             rast = rast.where(overlap_mask != 0, np.nan)
             bio_carbon_masks.append(overlap_mask)
             i += 1
@@ -260,7 +276,9 @@ class CarbonCalculator:
         ground_carbon_masks = []
         i = 0
         for rast in ground_carbon_rasts:
-            overlap_mask = get_overlap_mask(rast, self.zone.iloc[i].geometry)
+            overlap_mask = get_overlap_mask(
+                rast, self.zone.iloc[i].geometry, self.simplify_calcs
+            )
             rast = rast.where(overlap_mask != 0, np.nan)
             ground_carbon_masks.append(overlap_mask)
             i += 1
@@ -356,7 +374,7 @@ class CarbonCalculator:
 
         # sum_cols = [col for col in all_columns if "grid_sum" in col]
         # sum_result = calcs_df[sum_cols].sum()
-            
+
         return_data: CalculationResult = {
             "areas": calcs_df.to_crs(epsg=4326).to_json(),
             "metadata": {"timestamp": datetime.utcnow()},
