@@ -142,7 +142,7 @@ async def calculate_piece(ctx, *, ui_id: str):
                     plan,
                 )
 
-    await queue.enqueue("calculate_piece", ui_id=str(ui_id), retries=3)
+    await queue.enqueue("calculate_piece", ui_id=str(ui_id), retries=3, timeout=172800)
 
 
 async def calculate_totals(ctx, *, ui_id: str):

@@ -165,7 +165,7 @@ async def calculate(
                     state_db_session, new_plan
                 )  # Pass the new plan to create_plan function
 
-    await queue.enqueue("calculate_piece", ui_id=str(ui_id), retries=3)
+    await queue.enqueue("calculate_piece", ui_id=str(ui_id), retries=3, timeout=172800)
 
     return {"status": CalculationStatus.PROCESSING.value, "id": ui_id}
 
