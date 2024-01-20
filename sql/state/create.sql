@@ -11,6 +11,7 @@ CREATE TABLE plan (
     total_indices INTEGER,
     last_index INTEGER,
     last_area_calculation_status calculation_status_enum,
+    last_area_calculation_retries INTEGER,
     calculated_ts TIMESTAMP,
     calculation_updated_ts TIMESTAMP,
     calculation_status calculation_status_enum,

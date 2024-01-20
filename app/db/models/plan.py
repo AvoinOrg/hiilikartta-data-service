@@ -36,6 +36,7 @@ class Plan(Base):
     last_area_calculation_status = Column(
         ENUM(CalculationStatus, name="calculation_status_enum"), index=True
     )
+    last_area_calculation_retries = Column(Integer)
     calculated_ts: Mapped[datetime] = Column(DateTime)
     calculation_updated_ts: Mapped[datetime] = Column(DateTime)
     calculation_status = Column(
