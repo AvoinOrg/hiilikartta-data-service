@@ -7,7 +7,7 @@ import xarray as xr
 import numpy as np
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import TypedDict, List
+from typing import Any, Dict, TypedDict, List
 import json
 
 from app.calculator.utils import get_bm_curve_values_for_years_mabp, get_overlap_mask
@@ -33,15 +33,17 @@ zoning_col = "zoning_code"
 
 
 class CalculationResult(TypedDict):
-    areas: str
-    totals: str
-    metadata: str
+    areas: gpd.GeoDataFrame
+    totals: gpd.GeoDataFrame
+    metadata: Dict[str, str]
 
 
 class CarbonCalculator:
-    def __init__(self, data):
+    def __init__(self, data, sort_col="id"):
         zone = gpd.GeoDataFrame.from_features(data["features"])
-        zone = zone.sort_values(by="id")
+        if sort_col and sort_col in zone.columns:
+            zone = zone.sort_values(by=sort_col)
+        zone.set_geometry("geometry", inplace=True)
         zone.set_crs("EPSG:4326", inplace=True)
         zone = zone.to_crs(f"EPSG:{crs}")
         zone["buffered_geometry"] = zone.geometry.buffer(22.7)
@@ -181,6 +183,31 @@ class CarbonCalculator:
     #     variables_ds["bio_carbon"] = bio_carbon_da.sel(band=1)
 
     #     return variables_ds
+
+    async def calculate_totals(self):
+        sum_cols = [
+            col for col in self.zone.columns if "nochange" in col or "planned" in col
+        ]
+
+        sum_result = self.zone[sum_cols].sum()
+
+        # Merge the results
+        # agg_results = {**sum_result.to_dict(), **weighted_averages}
+        agg_results = {**sum_result.to_dict()}
+        agg_results["geometry"] = self.zone.geometry.unary_union
+        summed_gdf = gpd.GeoDataFrame([agg_results], geometry="geometry")
+        summed_gdf["area"] = summed_gdf["geometry"].area
+
+        for col in sum_cols:
+            new_col = col.replace("_total_", "_ha_")
+            summed_gdf[new_col] = summed_gdf[col] / (summed_gdf["area"] * sqm_to_ha)
+
+        summed_gdf.set_crs(epsg=3067, inplace=True)
+
+        return {
+            "totals": summed_gdf.to_crs(epsg=4326).to_json(),
+            "metadata": {"timestamp": datetime.utcnow()},
+        }
 
     async def calculate(self, db_session: AsyncSession) -> CalculationResult:
         bm_curves_df = get_bm_curve_df()
@@ -329,24 +356,9 @@ class CarbonCalculator:
 
         # sum_cols = [col for col in all_columns if "grid_sum" in col]
         # sum_result = calcs_df[sum_cols].sum()
-        sum_result = calcs_df[sum_cols].sum()
-
-        # Merge the results
-        # agg_results = {**sum_result.to_dict(), **weighted_averages}
-        agg_results = {**sum_result.to_dict()}
-        agg_results["geometry"] = calcs_df.geometry.unary_union
-        summed_gdf = gpd.GeoDataFrame([agg_results], geometry="geometry")
-        summed_gdf["area"] = summed_gdf["geometry"].area
-
-        for col in sum_cols:
-            new_col = col.replace("_total_", "_ha_")
-            summed_gdf[new_col] = summed_gdf[col] / (summed_gdf["area"] * sqm_to_ha)
-
-        summed_gdf.set_crs(epsg=3067, inplace=True)
-
+            
         return_data: CalculationResult = {
             "areas": calcs_df.to_crs(epsg=4326).to_json(),
-            "totals": summed_gdf.to_crs(epsg=4326).to_json(),
             "metadata": {"timestamp": datetime.utcnow()},
         }
 
