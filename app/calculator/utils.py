@@ -48,7 +48,9 @@ async def get_bm_curve_values_for_years_mabp(
                         variables = variables_dict.get(int(value))
                         overlap_multiplier = 1
                         if rast_overlap_masks is not None:
-                            overlap_multiplier = rast_overlap_masks[idx][x][y].values.item()
+                            overlap_multiplier = rast_overlap_masks[idx][x][
+                                y
+                            ].values.item()
 
                         if variables is not None:
                             filtered_variables = {k: variables[k] for k in keys_to_use}
@@ -94,7 +96,14 @@ def create_pixel_box(affine_transform, row, col, width, height):
     )
 
 
-def get_overlap_mask(data_array: xr.DataArray, geometry):
+def get_simplified_mask(data_array: xr.DataArray, geometry):
+    new_data_array = xr.where(data_array > 0, 1, 0)
+    return new_data_array
+
+
+def get_overlap_mask(data_array: xr.DataArray, geometry, simplify_calcs=False):
+    if simplify_calcs:
+        return get_simplified_mask(data_array, geometry)
     # Assuming rast is a rasterio dataset
     affine_transform = rio.transform.from_bounds(
         *data_array.rio.bounds(), data_array.rio.width, data_array.rio.height
