@@ -141,7 +141,7 @@ async def fetch_ground_carbon_for_regions(
                         :crs
                     ) as geom,
                     idx as order_num
-                FROM hiilikartta_maaperanhiili_2023_tcha,
+                FROM gtkjaluke_maaperanhiili_xxxx_tcha,
                     unnest(array[{wkt_list_str}]) WITH ORDINALITY as indexed_wkt(wkt, idx)
                 WHERE ST_Intersects(
                     rast, 
