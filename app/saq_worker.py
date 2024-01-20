@@ -6,9 +6,12 @@ from app.types.general import CalculationStatus
 from app.db.connection import get_async_context_gis_db, get_async_context_state_db
 from app.calculator.calculator import CarbonCalculator
 from app.db.plan import (
+    add_feature_collection_to_plan_areas,
+    get_feature_from_plan_by_ui_id_and_index,
+    get_plan_with_report_areas_by_ui_id,
+    get_plan_without_data_by_ui_id,
     update_plan,
     get_plan_by_ui_id,
-    create_plan,
 )  # Import the methods from plan.py
 from app import config
 from app.utils.logger import get_logger
@@ -16,6 +19,8 @@ from app.utils.logger import get_logger
 logger = get_logger(__name__)
 
 global_settings = config.get_settings()
+
+MAX_CALC_RETRIES = 2
 
 
 # class CalculationResult(TypedDict):
@@ -56,6 +61,90 @@ async def calculate(ctx, *, ui_id: str):
                 )
 
 
+async def calculate_piece(ctx, *, ui_id: str):
+    plan = None
+    feature = None
+    totals = None
+    async with get_async_context_state_db() as state_db_session:
+        plan = await get_plan_without_data_by_ui_id(state_db_session, UUID(ui_id))
+
+        if not plan:
+            raise ValueError("Plan not found or is invalid.")
+        if plan:
+            if plan.last_index + 1 >= plan.total_indices:
+                plan_report = await get_plan_with_report_areas_by_ui_id(
+                    state_db_session, UUID(ui_id)
+                )
+                if plan_report:
+                    cc = CarbonCalculator(plan_report.report_areas, sort_col="none")
+                    calc_data = await cc.calculate_totals()
+
+                    if calc_data:
+                        plan.calculation_status = CalculationStatus.FINISHED.value
+                        plan.report_totals = calc_data["totals"]
+                        plan.calculated_ts = calc_data["metadata"].get("timestamp")
+                        await update_plan(
+                            state_db_session,
+                            plan,
+                        )
+                return
+
+            feature = await get_feature_from_plan_by_ui_id_and_index(
+                state_db_session, UUID(ui_id), plan.last_index + 1
+            )
+            if plan.last_area_calculation_retries > MAX_CALC_RETRIES:
+                plan.last_area_calculation_retries = 0
+                plan.last_index = plan.last_index + 1
+                await update_plan(
+                    state_db_session,
+                    plan,
+                )
+            elif feature:
+                plan.last_area_calculation_status = CalculationStatus.PROCESSING.value
+                plan.last_area_calculation_retries = (
+                    plan.last_area_calculation_retries + 1
+                )
+
+                await update_plan(
+                    state_db_session,
+                    plan,
+                )
+
+    if feature:
+        async with get_async_context_gis_db() as gis_db_session:
+            cc = CarbonCalculator(
+                {"type": "FeatureCollection", "features": [feature]},
+            )
+            calc_data = await cc.calculate(gis_db_session)
+
+        async with get_async_context_state_db() as state_db_session:
+            plan = await get_plan_without_data_by_ui_id(state_db_session, UUID(ui_id))
+            if calc_data == None:
+                plan.calculation_status = CalculationStatus.ERROR.value
+                plan.last_area_calculation_status = CalculationStatus.ERROR.value
+                plan.last_area_calculation_retries = (
+                    plan.last_area_calculation_retries + 1
+                )
+                await update_plan(
+                    state_db_session,
+                    plan,
+                )
+            else:
+                await add_feature_collection_to_plan_areas(
+                    state_db_session, plan.id, calc_data["areas"]
+                )
+
+                plan.last_area_calculation_status = CalculationStatus.FINISHED.value
+                plan.calculation_updated_ts = calc_data["metadata"].get("timestamp")
+                plan.last_index = plan.last_index + 1
+                await update_plan(
+                    state_db_session,
+                    plan,
+                )
+
+    await queue.enqueue("calculate_piece", ui_id=str(ui_id), retries=3)
+
+
 async def calculate_totals(ctx, *, ui_id: str):
     pass
 
@@ -83,7 +172,7 @@ queue = Queue.from_url(global_settings.redis_url)
 
 settings = {
     "queue": queue,
-    "functions": [calculate],
+    "functions": [calculate, calculate_piece],
     "concurrency": 10,
     # "startup": startup,
     # "shutdown": shutdown,
