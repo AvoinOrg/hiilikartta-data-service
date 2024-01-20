@@ -101,7 +101,6 @@ async def zip_response_data(data):
 @app.post("/calculation")
 async def calculate(
     request: Request,
-    background_tasks: BackgroundTasks,
     file: UploadFile = Form(...),
     user_id: str = Form(None),
     state_db_session: AsyncSession = Depends(get_async_state_db),
@@ -122,13 +121,13 @@ async def calculate(
         )
 
     plan = await get_plan_by_ui_id(state_db_session, ui_id)
-    if plan:
-        if plan.calculation_status == CalculationStatus.PROCESSING.value:
+    if plan and plan.calculation_status.value == CalculationStatus.PROCESSING.value:
+        if plan.calculation_status.value == CalculationStatus.PROCESSING.value:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="A calculation with the provided ID is already in progress.",
             )
-        plan.calculation_status = CalculationStatus.PROCESSING.value
+        plan.calculation_status = CalculationStatus.PROCESSING
         await update_plan(state_db_session, plan)
     else:
         temp_file_path = None
@@ -149,14 +148,24 @@ async def calculate(
                 data=data,
                 total_indices=total_indices,
                 last_index=-1,
+                last_area_calculation_retries=0,
+                report_areas=json.dumps({"type": "FeatureCollection", "features": []}),
+                report_totals=None,
+                calculated_ts=None,
+                last_area_calculation_status=None,
             )
             if user_id:  # or any other condition to validate user_id
                 new_plan["user_id"] = user_id
-            await create_plan(
-                state_db_session, new_plan
-            )  # Pass the new plan to create_plan function
 
-    await queue.enqueue("calculate", ui_id=str(ui_id), timeout=60)
+            if plan:
+                new_plan.id = plan.id
+                await update_plan(state_db_session, new_plan)
+            else:
+                await create_plan(
+                    state_db_session, new_plan
+                )  # Pass the new plan to create_plan function
+
+    await queue.enqueue("calculate_piece", ui_id=str(ui_id), retries=3)
 
     return {"status": CalculationStatus.PROCESSING.value, "id": ui_id}
 
@@ -183,21 +192,21 @@ async def get_calculation_status(
 
     content = {"status": plan.calculation_status.value, "id": str(ui_id)}
 
-    if plan.calculation_status == CalculationStatus.PROCESSING:
+    if plan.calculation_status.value == CalculationStatus.PROCESSING.value:
         return Response(
             content=await zip_response_data(content),
             headers=headers,
             status_code=status.HTTP_202_ACCEPTED,
         )
 
-    if plan.calculation_status == CalculationStatus.ERROR:
+    if plan.calculation_status.value == CalculationStatus.ERROR.value:
         return Response(
             content=await zip_response_data(content),
             headers=headers,
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
         )
 
-    if plan.calculation_status == CalculationStatus.FINISHED:
+    if plan.calculation_status.value == CalculationStatus.FINISHED.value:
         content["data"] = {
             "totals": plan.report_totals,
             "areas": plan.report_areas,
@@ -232,7 +241,6 @@ async def get_plan(
             detail="The provided ID is not a valid UUID.",
         )
     plan = await get_plan_by_ui_id(state_db_session, ui_id)
-    print(plan)
 
     headers = {"Content-Encoding": "gzip"}
 
@@ -246,7 +254,7 @@ async def get_plan(
         "name": plan.name,
     }
 
-    if plan.calculation_status == CalculationStatus.FINISHED:
+    if plan.calculation_status.value == CalculationStatus.FINISHED.value:
         content["report_data"] = {
             "totals": plan.report_totals,
             "areas": plan.report_areas,
