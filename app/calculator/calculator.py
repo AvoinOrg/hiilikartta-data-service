@@ -30,6 +30,7 @@ ha_to_grid = 1 / grid_to_ha
 sqm_to_ha = 1 / 10_000  # 1 hectare is 10,000 square meters
 crs = "3067"
 zoning_col = "zoning_code"
+c_to_co2 = 3.6
 
 
 class CalculationResult(TypedDict):
@@ -322,7 +323,7 @@ class CarbonCalculator:
                 vals = []
 
                 for idx, year_dict in enumerate(bm_curve_values):
-                    val = base_vals[idx]
+                    val = base_vals[idx] * c_to_co2
                     if year_dict is not None:
                         val += year_dict[year] * grid_to_ha
                     if use_multiplier and year != str(current_year):
@@ -374,6 +375,13 @@ class CarbonCalculator:
 
         # sum_cols = [col for col in all_columns if "grid_sum" in col]
         # sum_result = calcs_df[sum_cols].sum()
+        cols_to_multiply = [
+            col for col in calcs_df.columns if "planned" in col or "nochange" in col
+        ]
+        # calcs_df[cols_to_multiply] = calcs_df[cols_to_multiply].apply(
+        #     pd.to_numeric, errors="coerce"
+        # )
+        calcs_df[cols_to_multiply] = calcs_df[cols_to_multiply] * c_to_co2
 
         return_data: CalculationResult = {
             "areas": calcs_df.to_crs(epsg=4326).to_json(),
