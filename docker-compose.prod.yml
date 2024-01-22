@@ -20,7 +20,7 @@ services:
     build: .
     container_name: hiilikartta-data-worker
     image: hiilikartta-data-service
-    command: poetry run saq --workers 50 app.saq_worker.settings --web
+    command: poetry run saq --workers 25 app.saq_worker.settings --web
     env_file:
       - ./.env
     volumes:
