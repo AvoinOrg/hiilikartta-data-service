@@ -327,7 +327,7 @@ class CarbonCalculator:
                     if year_dict is not None:
                         val += year_dict[year] * grid_to_ha
                     if use_multiplier and year != str(current_year):
-                        vals.append(val * area_multipliers[idx])
+                        vals.append(val * (1 - area_multipliers[idx]))
                     else:
                         vals.append(val)
 
@@ -359,7 +359,7 @@ class CarbonCalculator:
                 for idx, base_val in enumerate(base_vals):
                     val = base_val
                     if use_multiplier and year != str(current_year):
-                        vals.append(val * area_multipliers[idx])
+                        vals.append(val * (1 - area_multipliers[idx]))
                     else:
                         vals.append(val)
 
