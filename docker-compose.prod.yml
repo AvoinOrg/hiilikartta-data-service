@@ -28,7 +28,7 @@ services:
       - .:/app:z
       - ./.cache:/root/.cache
     ports:
-      - "${SAQ_WEB_PORT}:8080"
+      - "127.0.0.1:${SAQ_WEB_PORT}:8080"
     networks:
       - proxy-net
     depends_on:
@@ -43,7 +43,7 @@ services:
     image: redis:latest
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     networks:
       - proxy-net
   
@@ -75,7 +75,7 @@ services:
     ports:
       - 80:80
       - 443:443
-      - 8080:8080
+      -"127.0.0.1:8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./letsencrypt:/letsencrypt
