@@ -15,6 +15,11 @@ services:
     entrypoint: ["/bin/bash", "/app/docker-entrypoint.prod.sh"]
     networks:
       - proxy-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   worker:
     build: .
@@ -37,18 +42,28 @@ services:
       redis:
         condition: service_started
     restart: unless-stopped
-        
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
+
   redis:
     container_name: hiilikartta-data-redis
     image: redis:latest
     restart: unless-stopped
     volumes:
-    - ${REDIS_DATA_PATH}:/data
+      - ${REDIS_DATA_PATH}:/data
     ports:
       - "127.0.0.1:6379:6379"
     networks:
       - proxy-net
-  
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   traefik:
     image: traefik:v2.10
     container_name: traefik
@@ -57,7 +72,7 @@ services:
       - ./.env
     command:
       - --api.insecure=true
-      - --api.dashboard=true 
+      - --api.dashboard=true
       - --providers.docker=false
       - --providers.file.filename=/etc/traefik/dynamic_conf.yml
       - --providers.file.watch=true
@@ -85,6 +100,11 @@ services:
       - ${TRAEFIK_LOGS_PATH}:/logs
     networks:
       - proxy-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "30m"
+        max-file: "3"
 
 networks:
   proxy-net:
