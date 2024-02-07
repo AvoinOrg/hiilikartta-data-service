@@ -22,7 +22,7 @@ debug = global_settings.is_debug
 gis_engine = create_async_engine(
     gis_url,
     future=True,
-    echo=True,
+    echo=False,
     poolclass=QueuePool,
     pool_recycle=290,
     json_serializer=jsonable_encoder,
@@ -31,7 +31,7 @@ gis_engine = create_async_engine(
 state_engine = create_async_engine(
     state_url,
     future=True,
-    echo=True,
+    echo=False,
     poolclass=QueuePool,
     pool_recycle=290,
     json_serializer=jsonable_encoder,
