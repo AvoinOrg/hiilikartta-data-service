@@ -301,7 +301,7 @@ settings = {
     "queue": queue,
     "functions": [calculate, calculate_piece],
     "concurrency": 10,
-    "cron_jobs": [CronJob(handle_finished_calcs, cron="* * * * * */120")],
+    "cron_jobs": [CronJob(handle_finished_calcs, cron="* * * * * */120", timeout=300)],
     "startup": startup,
     # "shutdown": shutdown,
     # "before_process": before_process,
