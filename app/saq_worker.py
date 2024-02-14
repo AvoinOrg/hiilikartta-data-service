@@ -70,9 +70,6 @@ async def calculate_piece(ctx, *, ui_id: str):
     feature = None
     totals = None
 
-    print("we be starting NOW")
-    time.sleep(60)
-
     try:
         async with get_async_context_state_db() as state_db_session:
             plan = await get_plan_without_data_by_ui_id(state_db_session, UUID(ui_id))
