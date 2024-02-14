@@ -9,6 +9,7 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Any, Dict, TypedDict, List
 import json
+from warnings import simplefilter
 
 from app.calculator.utils import get_bm_curve_values_for_years_mabp, get_overlap_mask
 from app.db.gis import (
@@ -24,6 +25,7 @@ from app.utils.data_loader import (
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
+simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
 
 grid_to_ha = 16 * 16 / 10_000
 ha_to_grid = 1 / grid_to_ha
