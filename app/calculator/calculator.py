@@ -48,6 +48,15 @@ class CarbonCalculator:
         zone.set_crs("EPSG:4326", inplace=True)
         zone = zone.to_crs(f"EPSG:{crs}")
 
+        zone['is_valid'] = zone['geometry'].is_valid
+        # Fixing invalid geometries with buffer(0)
+        zone.loc[~zone['is_valid'], 'geometry'] = zone.loc[~zone['is_valid'], 'geometry'].apply(lambda geom: geom.buffer(0))
+        # Checking validity again
+        zone['is_valid'] = zone['geometry'].is_valid
+
+        if not zone['is_valid'].all():
+            raise ValueError("Geometries are not valid, even after trying to fix them with buffer(0)")
+        
         self.simplify_calcs = False
         # Simplify calculations for large areas
         if zone.area.sum() > 50000:
