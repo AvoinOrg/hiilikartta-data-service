@@ -65,88 +65,173 @@ async def calculate_piece(ctx, *, ui_id: str):
     plan = None
     feature = None
     totals = None
-    async with get_async_context_state_db() as state_db_session:
-        plan = await get_plan_without_data_by_ui_id(state_db_session, UUID(ui_id))
 
-        if not plan:
-            raise ValueError("Plan not found or is invalid.")
-        if plan:
-            if plan.last_index + 1 >= plan.total_indices:
-                plan_report = await get_plan_with_report_areas_by_ui_id(
-                    state_db_session, UUID(ui_id)
+    print("we be starting NOW")
+    time.sleep(60)
+
+    try:
+        async with get_async_context_state_db() as state_db_session:
+            plan = await get_plan_without_data_by_ui_id(state_db_session, UUID(ui_id))
+
+            if not plan:
+                raise ValueError("Plan not found or is invalid.")
+            if plan:
+                if plan.last_index + 1 >= plan.total_indices:
+                    plan_report = await get_plan_with_report_areas_by_ui_id(
+                        state_db_session, UUID(ui_id)
+                    )
+                    if plan_report:
+                        cc = CarbonCalculator(plan_report.report_areas, sort_col="none")
+                        calc_data = await cc.calculate_totals()
+
+                        if calc_data:
+                            plan.calculation_status = CalculationStatus.FINISHED.value
+                            plan.report_totals = calc_data["totals"]
+                            plan.calculated_ts = calc_data["metadata"].get("timestamp")
+                            await update_plan(
+                                state_db_session,
+                                plan,
+                            )
+                    return
+
+                feature = await get_feature_from_plan_by_ui_id_and_index(
+                    state_db_session, UUID(ui_id), plan.last_index + 1
                 )
-                if plan_report:
-                    cc = CarbonCalculator(plan_report.report_areas, sort_col="none")
-                    calc_data = await cc.calculate_totals()
+                if plan.last_area_calculation_retries > MAX_CALC_RETRIES:
+                    plan.last_area_calculation_retries = 0
+                    plan.last_index = plan.last_index + 1
+                    await update_plan(
+                        state_db_session,
+                        plan,
+                    )
+                elif feature:
+                    plan.last_area_calculation_status = (
+                        CalculationStatus.PROCESSING.value
+                    )
+                    plan.last_area_calculation_retries = (
+                        plan.last_area_calculation_retries + 1
+                    )
 
-                    if calc_data:
-                        plan.calculation_status = CalculationStatus.FINISHED.value
-                        plan.report_totals = calc_data["totals"]
-                        plan.calculated_ts = calc_data["metadata"].get("timestamp")
+                    await update_plan(
+                        state_db_session,
+                        plan,
+                    )
+
+        if feature:
+            async with get_async_context_gis_db() as gis_db_session:
+                try:
+                    cc = CarbonCalculator(
+                        {"type": "FeatureCollection", "features": [feature]},
+                    )
+                    calc_data = await cc.calculate(gis_db_session)
+                except Exception as e:
+                    logger.error(
+                        f"Error calculating plan with ui_id: {plan.ui_id} on feature: {feature}"
+                    )
+                    logger.error(e)
+                    if plan.last_area_calculation_retries > MAX_CALC_RETRIES:
+                        plan.last_area_calculation_retries = 0
+                        plan.last_index = plan.last_index + 1
                         await update_plan(
                             state_db_session,
                             plan,
                         )
-                return
+                    elif feature:
+                        plan.last_area_calculation_status = (
+                            CalculationStatus.PROCESSING.value
+                        )
+                        plan.last_area_calculation_retries = (
+                            plan.last_area_calculation_retries + 1
+                        )
 
-            feature = await get_feature_from_plan_by_ui_id_and_index(
-                state_db_session, UUID(ui_id), plan.last_index + 1
-            )
-            if plan.last_area_calculation_retries > MAX_CALC_RETRIES:
-                plan.last_area_calculation_retries = 0
-                plan.last_index = plan.last_index + 1
-                await update_plan(
-                    state_db_session,
-                    plan,
-                )
-            elif feature:
-                plan.last_area_calculation_status = CalculationStatus.PROCESSING.value
-                plan.last_area_calculation_retries = (
-                    plan.last_area_calculation_retries + 1
-                )
+                    await update_plan(
+                        state_db_session,
+                        plan,
+                    )
 
-                await update_plan(
-                    state_db_session,
-                    plan,
+            async with get_async_context_state_db() as state_db_session:
+                plan = await get_plan_without_data_by_ui_id(
+                    state_db_session, UUID(ui_id)
                 )
+                if calc_data == None:
+                    plan.calculation_status = CalculationStatus.ERROR.value
+                    plan.last_area_calculation_status = CalculationStatus.ERROR.value
+                    plan.last_area_calculation_retries = (
+                        plan.last_area_calculation_retries + 1
+                    )
+                    await update_plan(
+                        state_db_session,
+                        plan,
+                    )
+                else:
+                    await add_feature_collection_to_plan_areas(
+                        state_db_session, plan.id, calc_data["areas"]
+                    )
 
-    if feature:
-        async with get_async_context_gis_db() as gis_db_session:
-            cc = CarbonCalculator(
-                {"type": "FeatureCollection", "features": [feature]},
-            )
-            calc_data = await cc.calculate(gis_db_session)
+                    plan.last_area_calculation_status = CalculationStatus.FINISHED.value
+                    plan.calculation_updated_ts = calc_data["metadata"].get("timestamp")
+                    plan.last_index = plan.last_index + 1
+                    await update_plan(
+                        state_db_session,
+                        plan,
+                    )
 
-        async with get_async_context_state_db() as state_db_session:
-            plan = await get_plan_without_data_by_ui_id(state_db_session, UUID(ui_id))
-            if calc_data == None:
-                plan.calculation_status = CalculationStatus.ERROR.value
-                plan.last_area_calculation_status = CalculationStatus.ERROR.value
-                plan.last_area_calculation_retries = (
-                    plan.last_area_calculation_retries + 1
-                )
-                await update_plan(
-                    state_db_session,
-                    plan,
-                )
-            else:
-                await add_feature_collection_to_plan_areas(
-                    state_db_session, plan.id, calc_data["areas"]
-                )
+        await queue.enqueue(
+            "calculate_piece", ui_id=str(ui_id), retries=0, timeout=172800
+        )
 
-                plan.last_area_calculation_status = CalculationStatus.FINISHED.value
-                plan.calculation_updated_ts = calc_data["metadata"].get("timestamp")
-                plan.last_index = plan.last_index + 1
-                await update_plan(
-                    state_db_session,
-                    plan,
-                )
-
-    await queue.enqueue("calculate_piece", ui_id=str(ui_id), retries=3, timeout=172800)
+    except Exception as e:
+        logger.error(e)
+        await queue.enqueue(
+            "calculate_piece", ui_id=str(ui_id), retries=0, timeout=172800
+        )
 
 
 async def calculate_totals(ctx, *, ui_id: str):
     pass
+
+
+async def handle_finished_calcs(ctx):
+    r = redis.Redis(
+        host="redis",  # or your Redis server's hostname
+        port=6379,  # default Redis port
+    )
+    stats_data = {}
+
+    for key in r.scan_iter("saq:job:default:*"):
+        value = r.get(key)
+
+        # Decode the key (if necessary) and store the retrieved data
+        decoded_key = key.decode("utf-8")
+        stats_data[decoded_key] = value
+
+    for key, value in stats_data.items():
+        data_str = value.decode("utf-8")
+        data_dict = json.loads(data_str)
+
+        if data_dict["function"] == "calculate_piece":
+            if data_dict["status"] == "active":
+                if data_dict["touched"] < time.time() - 120:
+                    await queue.enqueue(
+                        "calculate_piece",
+                        ui_id=data_dict["kwargs"]["ui_id"],
+                        scheduled=time.time() + 120,
+                    )
+            if data_dict["status"] == "complete":
+                r.delete(key)  # Remove the item from Redis
+            elif data_dict["status"] == "failed":
+                async with get_async_context_state_db() as state_db_session:
+                    ui_id = data_dict["kwargs"]["ui_id"]
+                    plan = await get_plan_without_data_by_ui_id(
+                        state_db_session, UUID(ui_id)
+                    )
+                    if plan:
+                        plan.calculation_status = CalculationStatus.ERROR.value
+                        await update_plan(
+                            state_db_session,
+                            plan,
+                        )
+                        r.delete(key)  # Remove the item from Redis
 
 
 async def startup(ctx):
