@@ -138,7 +138,7 @@ async def calculate(
             temp_file_path = temp_file.name
             temp_file.flush()
             data = gpd.read_file(temp_file_path, index_col="id")
-            data.set_crs("EPSG:4326", inplace=True)
+            data.set_crs("EPSG:4326", inplace=True, allow_override=True)
             total_indices = len(data)
             data = data.to_json()
             new_plan = Plan(
