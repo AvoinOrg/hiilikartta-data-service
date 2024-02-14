@@ -203,7 +203,7 @@ async def get_calculation_status(
         return Response(
             content=await zip_response_data(content),
             headers=headers,
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_206_PARTIAL_CONTENT,
         )
 
     if plan.calculation_status.value == CalculationStatus.FINISHED.value:
