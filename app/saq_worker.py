@@ -150,8 +150,46 @@ async def calculate_totals(ctx, *, ui_id: str):
 
 
 async def startup(ctx):
-    # ctx["db"] = await create_db()
-    pass
+    lock_key = "startup_lock"
+    lock_value = str(uuid.uuid4())
+    r = redis.Redis(host="redis", port=6379)
+
+    # Attempt to acquire the lock
+    if r.set(lock_key, lock_value, ex=120, nx=True):
+        try:
+            logger.error("starting up")
+            stats_data = {}
+
+            for key in r.scan_iter("saq:job:default:*"):
+                try:
+                    value = r.get(key)
+                    decoded_key = key.decode("utf-8")
+                    stats_data[decoded_key] = value
+
+                    for key, value in stats_data.items():
+                        data_str = value.decode("utf-8")
+                        data_dict = json.loads(data_str)
+
+                        if (
+                            data_dict["status"] == "active"
+                            and data_dict["function"] == "calculate_piece"
+                        ):
+                            await queue.enqueue(
+                                "calculate_piece",
+                                ui_id=data_dict["kwargs"]["ui_id"],
+                                scheduled=time.time() + 120,
+                            )
+                            await r.delete(key)
+                except Exception as e:
+                    # Handle exceptions appropriately
+                    pass
+        finally:
+            # Ensure the lock is released by the process that acquired it
+            if r.get(lock_key) == lock_value:
+                r.delete(lock_key)
+    else:
+        # Handle the case where the lock could not be acquired
+        logger.error("Lock is already held, skipping startup.")
 
 
 async def shutdown(ctx):
