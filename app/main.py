@@ -139,6 +139,21 @@ async def calculate(
             temp_file.flush()
             data = gpd.read_file(temp_file_path, index_col="id")
             data.set_crs("EPSG:4326", inplace=True, allow_override=True)
+
+            data = data[
+                data.geometry.notna()
+                & data.geometry.apply(
+                    lambda geom: geom.geom_type in ["Polygon", "MultiPolygon"]
+                )
+            ]
+            data["is_valid"] = data["geometry"].is_valid
+            # Fixing invalid geometries with buffer(0)
+            data.loc[~data["is_valid"], "geometry"] = data.loc[
+                ~data["is_valid"], "geometry"
+            ].apply(lambda geom: geom.buffer(0))
+            data = data[data.geometry.is_valid]
+            data.drop(columns=["is_valid"], inplace=True)
+
             total_indices = len(data)
             data = data.to_json()
             new_plan = Plan(
@@ -212,9 +227,9 @@ async def get_calculation_status(
             "areas": plan.report_areas,
             "metadata": {
                 "report_name": plan.name,
-                "calculated_ts": int(plan.calculated_ts.timestamp())
-                if plan.calculated_ts
-                else None,
+                "calculated_ts": (
+                    int(plan.calculated_ts.timestamp()) if plan.calculated_ts else None
+                ),
             },
         }
         return Response(
@@ -259,9 +274,9 @@ async def get_plan(
             "totals": plan.report_totals,
             "areas": plan.report_areas,
             "metadata": {
-                "calculated_ts": int(plan.calculated_ts.timestamp())
-                if plan.calculated_ts
-                else None,
+                "calculated_ts": (
+                    int(plan.calculated_ts.timestamp()) if plan.calculated_ts else None
+                ),
             },
         }
 
