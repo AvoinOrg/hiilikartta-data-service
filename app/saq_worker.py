@@ -243,7 +243,7 @@ async def startup(ctx):
     # Attempt to acquire the lock
     if r.set(lock_key, lock_value, ex=120, nx=True):
         try:
-            logger.error("starting up")
+            logger.info("Running start up actions")
             stats_data = {}
 
             for key in r.scan_iter("saq:job:default:*"):
@@ -275,7 +275,7 @@ async def startup(ctx):
                 r.delete(lock_key)
     else:
         # Handle the case where the lock could not be acquired
-        logger.error("Lock is already held, skipping startup.")
+        logger.info("Lock is already held, skipping startup.")
 
 
 async def shutdown(ctx):
