@@ -6,7 +6,7 @@ from fastapi.encoders import jsonable_encoder
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from contextlib import asynccontextmanager
-from sqlalchemy.pool import QueuePool
+from sqlalchemy.pool import NullPool
 from typing import Callable, AsyncGenerator
 
 from app import config
@@ -23,8 +23,7 @@ gis_engine = create_async_engine(
     gis_url,
     future=True,
     echo=False,
-    poolclass=QueuePool,
-    pool_recycle=290,
+    poolclass=NullPool,
     json_serializer=jsonable_encoder,
 )
 
@@ -32,8 +31,7 @@ state_engine = create_async_engine(
     state_url,
     future=True,
     echo=False,
-    poolclass=QueuePool,
-    pool_recycle=290,
+    poolclass=NullPool,
     json_serializer=jsonable_encoder,
 )
 

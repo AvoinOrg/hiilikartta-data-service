@@ -64,6 +64,43 @@ services:
         max-size: "10m"
         max-file: "3"
 
+    pgbouncer-gis:
+    image: edoburu/pgbouncer:latest
+    container_name: pgbouncer-gis
+    restart: unless-stopped
+    environment:
+      DB_HOST: ${GIS_PG_HOST}
+      DB_PORT: ${GIS_PG_PORT}
+      DB_USER: ${GIS_PG_USER}
+      DB_PASSWORD: ${GIS_PG_PASSWORD}
+      DB_NAME: ${GIS_PG_DB}
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: session
+      MAX_CLIENT_CONN: 50
+      DEFAULT_POOL_SIZE: 20
+      SERVER_RESET_QUERY: "DISCARD ALL"
+    networks:
+      - proxy-net
+
+  pgbouncer-state:
+    image: edoburu/pgbouncer:latest
+    container_name: pgbouncer-state
+    restart: unless-stopped
+    environment:
+      DB_HOST: ${STATE_PG_HOST}
+      DB_PORT: ${STATE_PG_PORT}
+      DB_USER: ${STATE_PG_USER}
+      DB_PASSWORD: ${STATE_PG_PASSWORD}
+      DB_NAME: ${STATE_PG_DB}
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: session
+      MAX_CLIENT_CONN: 50
+      DEFAULT_POOL_SIZE: 20
+      SERVER_RESET_QUERY: "DISCARD ALL"
+    networks:
+      - proxy-net
+
+
   traefik:
     image: traefik:v2.10
     container_name: traefik

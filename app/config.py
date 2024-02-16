@@ -38,32 +38,22 @@ class Settings(BaseSettings):
 
     redis_url: str = env_vars["REDIS_URL"]
 
-    gis_pg_user: str = env_vars["GIS_PG_USER"]
-    gis_pg_pass: str = env_vars["GIS_PG_PASSWORD"]
-    gis_pg_host: str = env_vars["GIS_PG_HOST"]
-    gis_pg_db: str = env_vars["GIS_PG_DB"]
-    gis_pg_port: int = int(env_vars["GIS_PG_PORT"])
     gis_pg_url: URL = URL.create(
         "postgresql+asyncpg",
-        username=gis_pg_user,
-        password=gis_pg_pass,
-        host=gis_pg_host,
-        database=gis_pg_db,
-        port=gis_pg_port,
+        username=env_vars["GIS_PG_USER"],
+        password=env_vars["GIS_PG_PASSWORD"],
+        host="pgbouncer-gis",  # Use the PgBouncer service name for GIS DB
+        port=5432,  # Default PgBouncer port
+        database=env_vars["GIS_PG_DB"],
     )
 
-    state_pg_user: str = env_vars["STATE_PG_USER"]
-    state_pg_pass: str = env_vars["STATE_PG_PASSWORD"]
-    state_pg_host: str = env_vars["STATE_PG_HOST"]
-    state_pg_db: str = env_vars["STATE_PG_DB"]
-    state_pg_port: int = int(env_vars["STATE_PG_PORT"])
     state_pg_url: URL = URL.create(
         "postgresql+asyncpg",
-        username=state_pg_user,
-        password=state_pg_pass,
-        host=state_pg_host,
-        database=state_pg_db,
-        port=state_pg_port,
+        username=env_vars["STATE_PG_USER"],
+        password=env_vars["STATE_PG_PASSWORD"],
+        host="pgbouncer-state",  # Use the PgBouncer service name for STATE DB
+        port=5432,  # Default PgBouncer port
+        database=env_vars["STATE_PG_DB"],
     )
 
 
