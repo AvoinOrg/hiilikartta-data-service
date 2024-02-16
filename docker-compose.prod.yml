@@ -64,7 +64,7 @@ services:
         max-size: "10m"
         max-file: "3"
 
-    pgbouncer-gis:
+  pgbouncer-gis:
     image: edoburu/pgbouncer:latest
     container_name: pgbouncer-gis
     restart: unless-stopped
