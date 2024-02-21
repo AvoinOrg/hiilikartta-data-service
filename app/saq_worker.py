@@ -82,19 +82,39 @@ async def calculate_piece(ctx, *, ui_id: str):
                         state_db_session, UUID(ui_id)
                     )
                     if plan_report:
-                        cc = CarbonCalculator(plan_report.report_areas, sort_col="none")
-                        calc_data = await cc.calculate_totals()
+                        try:
+                            cc = CarbonCalculator(plan_report.report_areas, sort_col="none")
+                            calc_data = await cc.calculate_totals()
 
-                        if calc_data:
-                            plan.calculation_status = CalculationStatus.FINISHED.value
-                            plan.report_totals = calc_data["totals"]
-                            plan.calculated_ts = calc_data["metadata"].get("timestamp")
-                            await update_plan(
-                                state_db_session,
-                                plan,
-                            )
+                            if calc_data:
+                                plan.calculation_status = CalculationStatus.FINISHED.value
+                                plan.report_totals = calc_data["totals"]
+                                plan.calculated_ts = calc_data["metadata"].get("timestamp")
+                                await update_plan(
+                                    state_db_session,
+                                    plan,
+                                )
+                        except Exception as e:
+                            if plan.last_area_calculation_retries > MAX_CALC_RETRIES:
+                                plan.calculation_status = CalculationStatus.ERROR.value
+                                await update_plan(
+                                    state_db_session,
+                                    plan,
+                                )
+                            else:
+                                plan.last_area_calculation_retries += 1
+                                await update_plan(
+                                    state_db_session,
+                                    plan,
+                                )
+                                
+                    else:
+                        plan.calculation_status = CalculationStatus.ERROR.value
+                        await update_plan(
+                            state_db_session,
+                            plan,
+                        )
                     return
-
                 feature = await get_feature_from_plan_by_ui_id_and_index(
                     state_db_session, UUID(ui_id), plan.last_index + 1
                 )
@@ -119,6 +139,8 @@ async def calculate_piece(ctx, *, ui_id: str):
                     )
 
         if feature:
+            calc_data = None
+            
             async with get_async_context_gis_db() as gis_db_session:
                 try:
                     cc = CarbonCalculator(
@@ -183,9 +205,30 @@ async def calculate_piece(ctx, *, ui_id: str):
 
     except Exception as e:
         logger.error(e)
-        await queue.enqueue(
-            "calculate_piece", ui_id=str(ui_id), retries=0, timeout=172800
-        )
+        async with get_async_context_state_db() as state_db_session:
+            plan = await get_plan_without_data_by_ui_id(
+                state_db_session, UUID(ui_id)
+            )
+
+            if plan.last_area_calculation_retries < MAX_CALC_RETRIES:
+                plan.last_area_calculation_retries = (
+                    plan.last_area_calculation_retries + 1
+                )
+                await update_plan(
+                    state_db_session,
+                    plan,
+                )
+
+                await queue.enqueue(
+                    "calculate_piece", ui_id=str(ui_id), retries=0, timeout=172800
+                )
+            else:
+                plan.last_area_calculation_status = CalculationStatus.ERROR.value
+                plan.last_index = plan.last_index + 1
+                await update_plan(
+                    state_db_session,
+                    plan,
+                )
 
 
 async def calculate_totals(ctx, *, ui_id: str):
