@@ -48,7 +48,7 @@ async def fetch_rasters_for_regions(
                         :crs
                     ) as geom,
                     idx as order_num
-                FROM luke_mvmisegmentit_id,
+                FROM luke_mvmisegmentit_id_kokomaa,
                     unnest(array[{wkt_list_str}]) WITH ORDINALITY as indexed_wkt(wkt, idx)
                 WHERE ST_Intersects(
                     rast, 
