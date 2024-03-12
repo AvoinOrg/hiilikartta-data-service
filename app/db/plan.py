@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, text
 from sqlalchemy.future import select
 from app.db.models.plan import Plan
-from typing import List, Optional, Any
+from typing import Sequence, List, Optional, Any
 from uuid import UUID
 from sqlalchemy.orm import load_only
 
