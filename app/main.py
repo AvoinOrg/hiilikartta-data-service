@@ -64,6 +64,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Define OAuth2 scheme
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
+
+# Function to validate the token and extract the user information
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    validator = ZitadelIntrospectTokenValidator()
+    user_id = None
+
+    try:
+        data = validator.introspect_token(token)
+        validator.validate_token(data, "")
+        user_id = data.get("sub")
+    except ValidatorError as ex:
+        raise HTTPException(status_code=ex.status_code, detail=ex.error)
+
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return {"user_id": user_id}
+
+
 def process_and_create_plan(file, ui_id, name, plan=None):
     # Use a temporary file to process the data
     temp_file_path = None
