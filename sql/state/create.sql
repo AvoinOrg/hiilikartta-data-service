@@ -8,6 +8,7 @@ CREATE TABLE plan (
     data JSONB,
     created_ts TIMESTAMP DEFAULT current_timestamp(0),
     updated_ts TIMESTAMP DEFAULT current_timestamp(0),
+    saved_ts TIMESTAMP DEFAULT current_timestamp(0),
     total_indices INTEGER,
     last_index INTEGER,
     last_area_calculation_status calculation_status_enum,
