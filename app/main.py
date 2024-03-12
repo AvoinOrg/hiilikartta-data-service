@@ -355,3 +355,70 @@ async def create_update_plan(
         )
 
 
+@app.get("/plan")
+async def get_plan(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    state_db_session: AsyncSession = Depends(get_async_state_db),
+):
+    user_id = current_user.get("user_id")
+
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        ui_id: UUID = UUID(request.query_params.get("id"))
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The provided ID is not a valid UUID.",
+        )
+
+    plan = await get_plan_by_ui_id(state_db_session, ui_id)
+
+    if not plan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found."
+        )
+
+    if plan.user_id != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Plan does not belong to the user.",
+        )
+
+    headers = {"Content-Encoding": "gzip"}
+
+    content: Dict[str, Any] = {
+        "id": str(ui_id),
+        "name": plan.name,
+        "plan": plan.data,
+        "totals": plan.report_totals,
+        "areas": plan.report_areas,
+        "metadata": {
+            "calculated_ts": (
+                int(plan.calculated_ts.timestamp()) if plan.calculated_ts else None
+            ),
+        },
+    }
+
+    content["report_data"] = {
+        "totals": plan.report_totals,
+        "areas": plan.report_areas,
+        "metadata": {
+            "calculated_ts": (
+                int(plan.calculated_ts.timestamp()) if plan.calculated_ts else None
+            ),
+        },
+    }
+
+    return Response(
+        content=await zip_response_data(content),
+        status_code=status.HTTP_200_OK,
+        headers=headers,
+    )
+
