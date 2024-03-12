@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     data_pg_database: (str):
     data_pg_port: (int):
     data_pg_url: (URL):
+    zitadel_client_id: (str):
+    zitadel_client_secret: (str):
+    zitadel_domain: (str):
     Returns:
     instance of Settings
     """
@@ -55,6 +58,10 @@ class Settings(BaseSettings):
         port=5432,  # Default PgBouncer port
         database=env_vars["STATE_PG_DB"],
     )
+
+    zitadel_domain: str = os.getenv("ZITADEL_DOMAIN") or ""
+    zitadel_client_id: str = os.getenv("ZITADEL_CLIENT_ID") or ""
+    zitadel_client_secret: str = os.getenv("ZITADEL_CLIENT_SECRET") or ""
 
 
 @lru_cache
