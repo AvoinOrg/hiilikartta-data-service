@@ -84,6 +84,28 @@ async def get_all_plans(db_session: AsyncSession) -> List[Plan]:
     return result.scalars().all()
 
 
+async def get_plan_ids_by_user_id(db_session: AsyncSession, user_id: str) -> List[str]:
+    raw_sql = """
+        SELECT ui_id
+        FROM plan
+        WHERE user_id = :user_id
+        """
+
+    result = await db_session.execute(
+        text(raw_sql),
+        {
+            "user_id": user_id,
+        },
+    )
+    features = result.fetchall()
+
+    ids = []
+    for feature in features:
+        ids.append(feature[0])
+
+    return ids
+
+
 async def create_plan(db_session: AsyncSession, plan: Plan) -> Plan:
     db_session.add(plan)
     await db_session.commit()
