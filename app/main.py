@@ -177,6 +177,7 @@ async def calculate(
         )
 
     plan = await get_plan_by_ui_id(state_db_session, ui_id)
+
     if plan and plan.calculation_status.value == CalculationStatus.PROCESSING.value:
         if plan.calculation_status.value == CalculationStatus.PROCESSING.value:
             raise HTTPException(
@@ -187,54 +188,15 @@ async def calculate(
         await update_plan(state_db_session, plan)
     else:
         temp_file_path = None
-        with tempfile.NamedTemporaryFile(
-            delete=True, suffix=f"{ui_id}.zip", dir="/tmp"
-        ) as temp_file:
-            shutil.copyfileobj(file.file, temp_file)
-            temp_file_path = temp_file.name
-            temp_file.flush()
-            data = gpd.read_file(temp_file_path, index_col="id")
-            data.set_crs("EPSG:4326", inplace=True, allow_override=True)
+        new_plan = process_and_create_plan(file, ui_id, name)
 
-            data = data[
-                data.geometry.notna()
-                & data.geometry.apply(
-                    lambda geom: geom.geom_type in ["Polygon", "MultiPolygon"]
-                )
-            ]
-            data["is_valid"] = data["geometry"].is_valid
-            # Fixing invalid geometries with buffer(0)
-            data.loc[~data["is_valid"], "geometry"] = data.loc[
-                ~data["is_valid"], "geometry"
-            ].apply(lambda geom: geom.buffer(0))
-            data = data[data.geometry.is_valid]
-            data.drop(columns=["is_valid"], inplace=True)
-
-            total_indices = len(data)
-            data = data.to_json()
-            new_plan = Plan(
-                ui_id=ui_id,
-                name=name,
-                calculation_status=CalculationStatus.PROCESSING.value,
-                data=data,
-                total_indices=total_indices,
-                last_index=-1,
-                last_area_calculation_retries=0,
-                report_areas=json.dumps({"type": "FeatureCollection", "features": []}),
-                report_totals=None,
-                calculated_ts=None,
-                last_area_calculation_status=None,
-            )
-            if user_id:  # or any other condition to validate user_id
-                new_plan["user_id"] = user_id
-
-            if plan:
-                new_plan.id = plan.id
-                await update_plan(state_db_session, new_plan)
-            else:
-                await create_plan(
-                    state_db_session, new_plan
-                )  # Pass the new plan to create_plan function
+        if plan:
+            new_plan.id = plan.id
+            await update_plan(state_db_session, new_plan)
+        else:
+            await create_plan(
+                state_db_session, new_plan
+            )  # Pass the new plan to create_plan function
 
     await queue.enqueue("calculate_piece", ui_id=str(ui_id), retries=3, timeout=172800)
 
