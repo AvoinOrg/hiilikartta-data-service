@@ -1,18 +1,18 @@
 import shutil
 import tempfile
-from app.utils.retry_decorator import retry_async
 from fastapi import (
     FastAPI,
     Depends,
     UploadFile,
     Form,
     HTTPException,
-    BackgroundTasks,
     status,
     Response,
     Request,
 )
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 import gzip
 import json
@@ -20,12 +20,12 @@ from uuid import UUID
 from contextlib import asynccontextmanager
 import geopandas as gpd
 from typing import Dict, Any
+import datetime
 
-from app.calculator.calculator import CarbonCalculator
 from app.types.general import CalculationStatus
 from app.db.connection import get_async_context_gis_db, get_async_state_db
-from app.calculator.calculator import CarbonCalculator
 from app.db.plan import (
+    get_plan_ids_by_user_id,
     update_plan,
     get_plan_by_ui_id,
     create_plan,
@@ -34,6 +34,7 @@ from app.db.models.plan import Plan
 from app.utils.logger import get_logger
 from app.utils.data_loader import load_area_multipliers, load_bm_curves, unload_files
 from app.saq_worker import queue
+from app.auth.validator import ZitadelIntrospectTokenValidator, ValidatorError
 
 logger = get_logger(__name__)
 
