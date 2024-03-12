@@ -119,7 +119,8 @@ async def update_plan(db_session: AsyncSession, plan: Plan) -> bool:
 
     await db_session.merge(plan)
     await db_session.commit()
-    return True
+    await db_session.refresh(plan)
+    return plan
 
 
 async def delete_plan(db_session: AsyncSession, calc_id: UUID) -> bool:
