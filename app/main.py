@@ -422,3 +422,21 @@ async def get_plan(
         headers=headers,
     )
 
+
+@app.get("plan/ids")
+async def get_user_plans(
+    current_user: dict = Depends(get_current_user),
+    state_db_session: AsyncSession = Depends(get_async_state_db),
+):
+    user_id = current_user.get("user_id")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    plan_ids = await get_plan_ids_by_user_id(state_db_session, user_id)
+
+    return {"ids": plan_ids}
+
