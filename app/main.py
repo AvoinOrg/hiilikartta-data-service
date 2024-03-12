@@ -263,7 +263,7 @@ async def get_calculation_status(
 
 
 @app.get("/plan/external")
-async def get_plan(
+async def get_plan_external(
     request: Request, state_db_session: AsyncSession = Depends(get_async_state_db)
 ):
     try:
