@@ -63,31 +63,61 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def process_and_create_plan(file, ui_id, name, plan=None):
+    # Use a temporary file to process the data
+    temp_file_path = None
+    with tempfile.NamedTemporaryFile(
+        delete=True, suffix=f"{ui_id}.zip", dir="/tmp"
+    ) as temp_file:
+        shutil.copyfileobj(file.file, temp_file)
+        temp_file_path = temp_file.name
+        temp_file.flush()
+        data = gpd.read_file(temp_file_path, index_col="id")
+        data.set_crs("EPSG:4326", inplace=True, allow_override=True)
 
-@retry_async(retries=3, exceptions=(Exception,), delay=2)
-async def background_calculation(file, zoning_col, state_db_session, ui_id):
-    async with get_async_context_gis_db() as gis_db_session:
-        cc = CarbonCalculator(file, zoning_col)
-        calc_data = await cc.calculate(gis_db_session)
-
-        plan = await get_plan_by_ui_id(state_db_session, ui_id)
-        if calc_data == None:
-            plan.calculation_status = CalculationStatus.ERROR.value
-            await update_plan(
-                state_db_session,
-                plan,
-                CalculationStatus.ERROR.value,
-                {"message": "No data found for polygons."},
+        data = data[
+            data.geometry.notna()
+            & data.geometry.apply(
+                lambda geom: geom.geom_type in ["Polygon", "MultiPolygon"]
             )
+        ]
+        data["is_valid"] = data["geometry"].is_valid
+        # Fixing invalid geometries with buffer(0)
+        data.loc[~data["is_valid"], "geometry"] = data.loc[
+            ~data["is_valid"], "geometry"
+        ].apply(lambda geom: geom.buffer(0))
+        data = data[data.geometry.is_valid]
+        data.drop(columns=["is_valid"], inplace=True)
+
+        total_indices = len(data)
+        data = data.to_json()
+
+        if plan:
+            plan.data = data
+            plan.total_indices = total_indices
+            plan.last_index = -1
+            plan.last_area_calculation_retries = 0
+            plan.last_saved = datetime.datetime.utcnow()
+
+            return plan
+
         else:
-            plan.report_areas = calc_data["areas"]
-            plan.report_totals = calc_data["totals"]
-            plan.calculated_ts = calc_data["metadata"].get("timestamp")
-            plan.calculation_status = CalculationStatus.FINISHED.value
-            await update_plan(
-                state_db_session,
-                plan,
+            new_plan = Plan(
+                ui_id=ui_id,
+                name=name,
+                calculation_status=CalculationStatus.PROCESSING.value,
+                data=data,
+                total_indices=total_indices,
+                last_index=-1,
+                last_area_calculation_retries=0,
+                report_areas=json.dumps({"type": "FeatureCollection", "features": []}),
+                report_totals=None,
+                calculated_ts=None,
+                last_area_calculation_status=None,
+                last_saved=datetime.datetime.utcnow(),
             )
+
+            return new_plan
 
 
 async def zip_response_data(data):
