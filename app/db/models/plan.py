@@ -31,6 +31,11 @@ class Plan(Base):
         server_default=text("current_timestamp(0)"),
         onupdate=datetime.utcnow,
     )
+    saved_ts: Mapped[datetime] = Column(
+        DateTime,
+        default=datetime.utcnow,
+        server_default=text("current_timestamp(0)"),
+    )
     total_indices: Mapped[int] = Column(Integer)
     last_index: Mapped[int] = Column(Integer)
     last_area_calculation_status = Column(
