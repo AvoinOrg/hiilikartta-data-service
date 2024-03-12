@@ -303,3 +303,55 @@ async def get_plan_external(
         status_code=status.HTTP_200_OK,
         headers=headers,
     )
+
+
+@app.put("/plan")
+async def create_update_plan(
+    request: Request,
+    file: UploadFile = Form(...),
+    current_user: dict = Depends(get_current_user),
+    state_db_session: AsyncSession = Depends(get_async_state_db),
+):
+    try:
+        ui_id: UUID = UUID(request.query_params.get("id"))
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The provided ID is not a valid UUID.",
+        )
+
+    name = request.query_params.get("name")
+    if not name:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Name parameter is missing.",
+        )
+
+    plan = await get_plan_by_ui_id(state_db_session, ui_id)
+
+    if plan:
+        plan = process_and_create_plan(file, ui_id, name, plan)
+
+        await update_plan(state_db_session, plan)
+
+        return JSONResponse(
+            content={"id": str(ui_id), "last_saved": plan.last_saved.timestamp()},
+            status_code=status.HTTP_200_OK,
+        )
+    else:
+        new_plan = process_and_create_plan(file, ui_id, name)
+
+        user_id = current_user.get("user_id")
+        if user_id:
+            new_plan.user_id = user_id
+
+        await create_plan(
+            state_db_session, new_plan
+        )  # Pass the new plan to create_plan function
+
+        return JSONResponse(
+            content={"id": str(ui_id), "last_saved": new_plan.last_saved.timestamp()},
+            status_code=status.HTTP_201_CREATED,
+        )
+
+
