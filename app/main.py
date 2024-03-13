@@ -123,7 +123,7 @@ def process_and_create_plan(file, ui_id, name, plan=None):
             plan.total_indices = total_indices
             plan.last_index = -1
             plan.last_area_calculation_retries = 0
-            plan.last_saved = datetime.datetime.utcnow()
+            plan.saved_ts = datetime.datetime.utcnow()
 
             return plan
 
@@ -140,7 +140,7 @@ def process_and_create_plan(file, ui_id, name, plan=None):
                 report_totals=None,
                 calculated_ts=None,
                 last_area_calculation_status=None,
-                last_saved=datetime.datetime.utcnow(),
+                saved_ts=datetime.datetime.utcnow(),
             )
 
             return new_plan
@@ -335,7 +335,7 @@ async def create_update_plan(
         await update_plan(state_db_session, plan)
 
         return JSONResponse(
-            content={"id": str(ui_id), "last_saved": plan.last_saved.timestamp()},
+            content={"id": str(ui_id), "saved_ts": plan.saved_ts.timestamp()},
             status_code=status.HTTP_200_OK,
         )
     else:
@@ -350,7 +350,7 @@ async def create_update_plan(
         )  # Pass the new plan to create_plan function
 
         return JSONResponse(
-            content={"id": str(ui_id), "last_saved": new_plan.last_saved.timestamp()},
+            content={"id": str(ui_id), "saved_ts": new_plan.saved_ts.timestamp()},
             status_code=status.HTTP_201_CREATED,
         )
 
