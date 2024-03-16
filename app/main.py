@@ -312,6 +312,15 @@ async def create_update_plan(
     current_user: dict = Depends(get_current_user),
     state_db_session: AsyncSession = Depends(get_async_state_db),
 ):
+    user_id = current_user.get("user_id")
+
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     try:
         ui_id: UUID = UUID(request.query_params.get("id"))
     except ValueError:
@@ -339,11 +348,7 @@ async def create_update_plan(
             status_code=status.HTTP_200_OK,
         )
     else:
-        new_plan = process_and_create_plan(file, ui_id, name)
-
-        user_id = current_user.get("user_id")
-        if user_id:
-            new_plan.user_id = user_id
+        new_plan = process_and_create_plan(file, ui_id, name, user_id)
 
         await create_plan(
             state_db_session, new_plan
