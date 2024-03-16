@@ -492,7 +492,7 @@ async def delete_plan(
     return Response(status_code=status.HTTP_200_OK)
 
 
-@app.get("plan/ids")
+@app.get("/user/plans")
 async def get_user_plans(
     current_user: dict = Depends(get_current_user),
     state_db_session: AsyncSession = Depends(get_async_state_db),
@@ -508,4 +508,3 @@ async def get_user_plans(
     plan_ids = await get_plan_ids_by_user_id(state_db_session, user_id)
 
     return {"ids": plan_ids}
-
