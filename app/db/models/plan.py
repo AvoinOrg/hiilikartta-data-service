@@ -45,11 +45,11 @@ class Plan(Base):
         server_default=text("current_timestamp(0)"),
         nullable=True,
     )
-    # last_accessed_ts: Mapped[datetime] = mapped_column(
-    #     TIMESTAMP,
-    #     default=func.now,
-    #     server_default=text("current_timestamp(0)"),
-    # )
+    last_accessed_ts: Mapped[datetime] = mapped_column(
+        TIMESTAMP,
+        default=func.now,
+        server_default=text("current_timestamp(0)"),
+    )
     total_indices: Mapped[int] = mapped_column(Integer, nullable=True)
     last_index: Mapped[int] = mapped_column(Integer, nullable=True)
     last_area_calculation_status = mapped_column(
