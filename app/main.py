@@ -89,7 +89,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     return {"user_id": user_id}
 
 
-def process_and_create_plan(file, ui_id, name, plan=None):
+def process_and_create_plan(file, ui_id, name, user_id=None, plan=None):
     # Use a temporary file to process the data
     temp_file_path = None
     with tempfile.NamedTemporaryFile(
@@ -125,6 +125,9 @@ def process_and_create_plan(file, ui_id, name, plan=None):
             plan.last_area_calculation_retries = 0
             plan.saved_ts = datetime.datetime.utcnow()
 
+            if plan.user_id is None and user_id:
+                plan.user_id = user_id
+
             return plan
 
         else:
@@ -141,6 +144,7 @@ def process_and_create_plan(file, ui_id, name, plan=None):
                 calculated_ts=None,
                 last_area_calculation_status=None,
                 saved_ts=datetime.datetime.utcnow(),
+                user_id=user_id,
             )
 
             return new_plan
@@ -158,7 +162,7 @@ async def zip_response_data(data):
 async def calculate(
     request: Request,
     file: UploadFile = Form(...),
-    user_id: str = Form(None),
+    current_user: dict = Depends(get_current_user),
     state_db_session: AsyncSession = Depends(get_async_state_db),
 ):
     try:
@@ -187,8 +191,8 @@ async def calculate(
         plan.calculation_status = CalculationStatus.PROCESSING
         await update_plan(state_db_session, plan)
     else:
-        temp_file_path = None
-        new_plan = process_and_create_plan(file, ui_id, name)
+        user_id = current_user.get("user_id")
+        new_plan = process_and_create_plan(file, ui_id, name, user_id)
 
         if plan:
             new_plan.id = plan.id
@@ -200,7 +204,11 @@ async def calculate(
 
     await queue.enqueue("calculate_piece", ui_id=str(ui_id), retries=3, timeout=172800)
 
-    return {"status": CalculationStatus.PROCESSING.value, "id": ui_id}
+    return {
+        "status": CalculationStatus.PROCESSING.value,
+        "id": ui_id,
+        "user_id": user_id,
+    }
 
 
 @app.get("/calculation")
@@ -339,12 +347,16 @@ async def create_update_plan(
     plan = await get_plan_by_ui_id(state_db_session, ui_id)
 
     if plan:
-        plan = process_and_create_plan(file, ui_id, name, plan)
+        plan = process_and_create_plan(file, ui_id, name, plan=plan)
 
         await update_plan(state_db_session, plan)
 
         return JSONResponse(
-            content={"id": str(ui_id), "saved_ts": plan.saved_ts.timestamp()},
+            content={
+                "id": str(ui_id),
+                "user_id": user_id,
+                "saved_ts": plan.saved_ts.timestamp(),
+            },
             status_code=status.HTTP_200_OK,
         )
     else:
@@ -355,7 +367,11 @@ async def create_update_plan(
         )  # Pass the new plan to create_plan function
 
         return JSONResponse(
-            content={"id": str(ui_id), "saved_ts": new_plan.saved_ts.timestamp()},
+            content={
+                "id": str(ui_id),
+                "user_id": user_id,
+                "saved_ts": new_plan.saved_ts.timestamp(),
+            },
             status_code=status.HTTP_201_CREATED,
         )
 
