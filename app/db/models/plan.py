@@ -1,7 +1,6 @@
 from datetime import datetime
 from sqlalchemy import String, DateTime, text, Integer, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID, JSONB, ENUM, TIMESTAMP
-from sqlalchemy.sql import func
 from sqlalchemy.orm import Mapped, mapped_column
 from uuid import uuid4
 from typing import Any
@@ -30,24 +29,24 @@ class Plan(Base):
     data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=True)
     created_ts: Mapped[datetime] = mapped_column(
         TIMESTAMP,
-        default=func.now,
+        default=datetime.now,
         server_default=text("current_timestamp(0)"),
     )
     updated_ts: Mapped[datetime] = mapped_column(
         TIMESTAMP,
-        default=func.now,
+        default=datetime.now,
         server_default=text("current_timestamp(0)"),
-        onupdate=func.now,
+        onupdate=datetime.now,
     )
     saved_ts: Mapped[datetime] = mapped_column(
         TIMESTAMP,
-        default=func.now,
+        default=datetime.now,
         server_default=text("current_timestamp(0)"),
         nullable=True,
     )
     last_accessed_ts: Mapped[datetime] = mapped_column(
         TIMESTAMP,
-        default=func.now,
+        default=datetime.now,
         server_default=text("current_timestamp(0)"),
     )
     total_indices: Mapped[int] = mapped_column(Integer, nullable=True)
