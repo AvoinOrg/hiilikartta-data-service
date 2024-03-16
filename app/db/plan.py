@@ -79,7 +79,7 @@ async def get_plan_by_ui_id(db_session: AsyncSession, ui_id: UUID) -> Optional[P
     return plan if plan else None
 
 
-async def get_all_plans(db_session: AsyncSession) -> List[Plan]:
+async def get_all_plans(db_session: AsyncSession) -> Sequence[Plan]:
     result = await db_session.execute(select(Plan))
     return result.scalars().all()
 
