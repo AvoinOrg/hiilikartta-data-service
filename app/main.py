@@ -420,6 +420,8 @@ async def get_plan(
         "plan": plan.data,
         "totals": plan.report_totals,
         "areas": plan.report_areas,
+        "user_id": plan.user_id,
+        "saved_ts": plan.saved_ts,
         "metadata": {
             "calculated_ts": (
                 int(plan.calculated_ts.timestamp()) if plan.calculated_ts else None
