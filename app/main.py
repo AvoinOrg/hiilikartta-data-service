@@ -423,6 +423,54 @@ async def get_plan(
     )
 
 
+@app.delete("/plan")
+async def delete_plan(
+    request: Request,
+    current_user: dict = Depends(get_current_user),
+    state_db_session: AsyncSession = Depends(get_async_state_db),
+):
+    try:
+        ui_id: UUID = UUID(request.query_params.get("id"))
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The provided ID is not a valid UUID.",
+        )
+
+    plan = await get_plan_by_ui_id(state_db_session, ui_id)
+
+    if not plan:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found."
+        )
+
+    if plan.user_id:
+        user_id = current_user.get("user_id")
+
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Could not validate credentials",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
+        if plan.user_id != user_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Plan does not belong to the user.",
+            )
+
+    was_deleted = await state_db_session.delete(plan)
+
+    if not was_deleted:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="The plan could not be deleted.",
+        )
+
+    return Response(status_code=status.HTTP_200_OK)
+
+
 @app.get("plan/ids")
 async def get_user_plans(
     current_user: dict = Depends(get_current_user),
