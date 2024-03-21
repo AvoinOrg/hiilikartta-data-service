@@ -24,6 +24,7 @@ class Plan(Base):
         server_default=text("gen_random_uuid()"),
     )
     ui_id: Mapped[str] = mapped_column(UUID, index=True)
+    visible_ui_id: Mapped[str] = mapped_column(String, nullable=True)
     name: Mapped[str] = mapped_column(String, nullable=True)
     user_id: Mapped[str] = mapped_column(String, nullable=True)
     data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=True)
