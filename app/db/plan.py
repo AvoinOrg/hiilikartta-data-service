@@ -52,10 +52,12 @@ async def get_plan_with_report_areas_by_ui_id(
     cols = [
         Plan.id,
         Plan.ui_id,
+        Plan.visible_ui_id,
         Plan.name,
         Plan.user_id,
         Plan.created_ts,
         Plan.updated_ts,
+        Plan.saved_ts,
         Plan.total_indices,
         Plan.last_index,
         Plan.last_area_calculation_status,
