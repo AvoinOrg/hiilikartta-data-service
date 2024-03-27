@@ -443,28 +443,32 @@ async def get_plan(
 
     content: Dict[str, Any] = {
         "id": str(ui_id),
+        "visible_id": plan.visible_ui_id,
         "name": plan.name,
-        "plan": plan.data,
-        "totals": plan.report_totals,
-        "areas": plan.report_areas,
+        "data": plan.data,
         "user_id": plan.user_id,
-        "saved_ts": plan.saved_ts,
-        "metadata": {
-            "calculated_ts": (
-                int(plan.calculated_ts.timestamp()) if plan.calculated_ts else None
-            ),
-        },
+        "saved_ts": plan.saved_ts.timestamp(),
+        "created_ts": plan.created_ts.timestamp(),
+        "calculation_status": plan.calculation_status.value,
+        "calculation_updated_ts": (
+            plan.calculation_updated_ts.timestamp()
+            if plan.calculation_updated_ts
+            else None
+        ),
+        "total_indices": plan.total_indices,
+        "last_index": plan.last_index,
     }
 
-    content["report_data"] = {
-        "totals": plan.report_totals,
-        "areas": plan.report_areas,
-        "metadata": {
-            "calculated_ts": (
-                int(plan.calculated_ts.timestamp()) if plan.calculated_ts else None
-            ),
-        },
-    }
+    if plan.calculated_ts and plan.totals is not None:
+        content["report_data"] = {
+            "totals": plan.report_totals,
+            "areas": plan.report_areas,
+            "metadata": {
+                "calculated_ts": (
+                    int(plan.calculated_ts.timestamp()) if plan.calculated_ts else None
+                ),
+            },
+        }
 
     return Response(
         content=await zip_response_data(content),
