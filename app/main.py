@@ -474,7 +474,7 @@ async def get_plan(
 
 
 @app.delete("/plan")
-async def delete_plan(
+async def del_plan(
     request: Request,
     current_user: dict = Depends(get_current_user),
     state_db_session: AsyncSession = Depends(get_async_state_db),
@@ -510,7 +510,7 @@ async def delete_plan(
                 detail="Plan does not belong to the user.",
             )
 
-    was_deleted = await state_db_session.delete(plan)
+    was_deleted = await delete_plan(state_db_session, plan.id)
 
     if not was_deleted:
         raise HTTPException(
