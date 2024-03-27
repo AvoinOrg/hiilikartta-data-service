@@ -135,12 +135,8 @@ async def update_plan(db_session: AsyncSession, plan: Plan) -> bool:
     return plan
 
 
-async def delete_plan(db_session: AsyncSession, calc_id: UUID) -> bool:
-    plan = await get_plan_by_id(db_session, calc_id)
-    if not plan:
-        return False
-
-    await db_session.execute(delete(Plan).filter_by(id=calc_id))
+async def delete_plan(db_session: AsyncSession, id: str) -> bool:
+    await db_session.execute(delete(Plan).filter_by(id=id))
     await db_session.commit()
     return True
 
