@@ -17,7 +17,7 @@ class Plan(Base):
         ),  # Adds a unique constraint to ui_id
     )
 
-    id: Mapped[UUID] = mapped_column(
+    id: Mapped[str] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
         default=uuid4,
