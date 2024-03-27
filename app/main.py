@@ -240,7 +240,17 @@ async def get_calculation_status(
             status_code=status.HTTP_404_NOT_FOUND, detail="Calculation not found."
         )
 
-    content = {"status": plan.calculation_status.value, "id": str(ui_id)}
+    content = {
+        "id": str(ui_id),
+        "calculation_status": plan.calculation_status.value,
+        "calculation_updated_ts": (
+            plan.calculation_updated_ts.timestamp()
+            if plan.calculation_updated_ts
+            else None
+        ),
+        "total_indices": plan.total_indices,
+        "last_index": plan.last_index,
+    }
 
     if plan.calculation_status.value == CalculationStatus.PROCESSING.value:
         return Response(
