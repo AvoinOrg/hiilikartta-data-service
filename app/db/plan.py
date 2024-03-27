@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete, text
 from sqlalchemy.future import select
 from app.db.models.plan import Plan
-from typing import Sequence, List, Optional, Any
+from typing import Sequence, List, Dict, Optional, Any
 from uuid import UUID
 from sqlalchemy.orm import load_only
 
@@ -88,9 +88,11 @@ async def get_all_plans(db_session: AsyncSession) -> Sequence[Plan]:
     return result.scalars().all()
 
 
-async def get_plan_ids_by_user_id(db_session: AsyncSession, user_id: str) -> List[str]:
+async def get_plan_stats_by_user_id(
+    db_session: AsyncSession, user_id: str
+) -> List[Dict[str, Any]]:
     raw_sql = """
-        SELECT ui_id
+        SELECT ui_id, visible_ui_id, name, saved_ts
         FROM plan
         WHERE user_id = :user_id
         """
@@ -103,11 +105,17 @@ async def get_plan_ids_by_user_id(db_session: AsyncSession, user_id: str) -> Lis
     )
     features = result.fetchall()
 
-    ids = []
-    for feature in features:
-        ids.append(feature[0])
+    plan_stats = [
+        {
+            "ui_id": feature.ui_id,
+            "visible_ui_id": feature.visible_ui_id,
+            "name": feature.name,
+            "saved_ts": feature.saved_ts,
+        }
+        for feature in features
+    ]
 
-    return ids
+    return plan_stats
 
 
 async def create_plan(db_session: AsyncSession, plan: Plan) -> Plan:
