@@ -534,6 +534,17 @@ async def get_user_plans(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    plan_ids = await get_plan_ids_by_user_id(state_db_session, user_id)
+    plan_stats = await get_plan_stats_by_user_id(state_db_session, user_id)
 
-    return {"ids": plan_ids}
+    parsed_stats = []
+    for stats in plan_stats:
+        parsed_stats.append(
+            {
+                "id": str(stats["ui_id"]),
+                "visible_id": stats["visible_ui_id"],
+                "name": stats["name"],
+                "saved_ts": stats["saved_ts"].timestamp(),
+            }
+        )
+
+    return {"stats": parsed_stats}
