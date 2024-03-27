@@ -25,10 +25,11 @@ import datetime
 from app.types.general import CalculationStatus
 from app.db.connection import get_async_context_gis_db, get_async_state_db
 from app.db.plan import (
-    get_plan_ids_by_user_id,
+    get_plan_stats_by_user_id,
     update_plan,
     get_plan_by_ui_id,
     create_plan,
+    delete_plan,
 )  # Import the methods from plan.py
 from app.db.models.plan import Plan
 from app.utils.logger import get_logger
