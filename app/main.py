@@ -89,7 +89,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     return {"user_id": user_id}
 
 
-def process_and_create_plan(file, ui_id, name, user_id=None, plan=None):
+def process_and_create_plan(file, ui_id, visible_ui_id, name, user_id=None, plan=None):
     # Use a temporary file to process the data
     temp_file_path = None
     with tempfile.NamedTemporaryFile(
@@ -133,6 +133,7 @@ def process_and_create_plan(file, ui_id, name, user_id=None, plan=None):
         else:
             new_plan = Plan(
                 ui_id=ui_id,
+                visible_ui_id=visible_ui_id,
                 name=name,
                 calculation_status=CalculationStatus.NOT_STARTED.value,
                 data=data,
@@ -143,7 +144,7 @@ def process_and_create_plan(file, ui_id, name, user_id=None, plan=None):
                 report_totals=None,
                 calculated_ts=None,
                 last_area_calculation_status=None,
-                saved_ts=datetime.datetime.utcnow(),
+                saved_ts=datetime.datetime.now(),
                 user_id=user_id,
             )
 
@@ -171,6 +172,13 @@ async def calculate(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="The provided ID is not a valid UUID.",
+        )
+
+    visible_ui_id = request.query_params.get("visible_id")
+    if not visible_ui_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="visible_id parameter is missing.",
         )
 
     name = request.query_params.get("name")
@@ -338,6 +346,13 @@ async def create_update_plan(
             detail="The provided ID is not a valid UUID.",
         )
 
+    visible_ui_id = request.query_params.get("visible_id")
+    if not visible_ui_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="visible_id parameter is missing.",
+        )
+
     name = request.query_params.get("name")
     if not name:
         raise HTTPException(
@@ -348,7 +363,7 @@ async def create_update_plan(
     plan = await get_plan_by_ui_id(state_db_session, ui_id)
 
     if plan:
-        plan = process_and_create_plan(file, ui_id, name, plan=plan)
+        plan = process_and_create_plan(file, ui_id, visible_ui_id, name, plan=plan)
 
         await update_plan(state_db_session, plan)
 
@@ -361,7 +376,7 @@ async def create_update_plan(
             status_code=status.HTTP_200_OK,
         )
     else:
-        new_plan = process_and_create_plan(file, ui_id, name, user_id)
+        new_plan = process_and_create_plan(file, ui_id, visible_ui_id, name, user_id)
 
         await create_plan(
             state_db_session, new_plan
