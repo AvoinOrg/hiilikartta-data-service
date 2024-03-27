@@ -134,7 +134,7 @@ def process_and_create_plan(file, ui_id, name, user_id=None, plan=None):
             new_plan = Plan(
                 ui_id=ui_id,
                 name=name,
-                calculation_status=CalculationStatus.PROCESSING.value,
+                calculation_status=CalculationStatus.NOT_STARTED.value,
                 data=data,
                 total_indices=total_indices,
                 last_index=-1,
@@ -183,16 +183,15 @@ async def calculate(
     plan = await get_plan_by_ui_id(state_db_session, ui_id)
 
     if plan and plan.calculation_status.value == CalculationStatus.PROCESSING.value:
-        if plan.calculation_status.value == CalculationStatus.PROCESSING.value:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="A calculation with the provided ID is already in progress.",
-            )
-        plan.calculation_status = CalculationStatus.PROCESSING
-        await update_plan(state_db_session, plan)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A calculation with the provided ID is already in progress.",
+        )
+
     else:
         user_id = current_user.get("user_id")
-        new_plan = process_and_create_plan(file, ui_id, name, user_id)
+        new_plan = process_and_create_plan(file, ui_id, visible_ui_id, name, user_id)
+        new_plan.calculation_status = CalculationStatus.PROCESSING
 
         if plan:
             new_plan.id = plan.id
@@ -202,13 +201,15 @@ async def calculate(
                 state_db_session, new_plan
             )  # Pass the new plan to create_plan function
 
-    await queue.enqueue("calculate_piece", ui_id=str(ui_id), retries=3, timeout=172800)
+        await queue.enqueue(
+            "calculate_piece", ui_id=str(ui_id), retries=3, timeout=172800
+        )
 
-    return {
-        "status": CalculationStatus.PROCESSING.value,
-        "id": ui_id,
-        "user_id": user_id,
-    }
+        return {
+            "status": CalculationStatus.PROCESSING.value,
+            "id": ui_id,
+            "user_id": user_id,
+        }
 
 
 @app.get("/calculation")
