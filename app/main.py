@@ -228,6 +228,7 @@ async def calculate(
             "status": CalculationStatus.PROCESSING.value,
             "id": ui_id,
             "user_id": user_id,
+            "saved_ts": new_plan.saved_ts.timestamp(),
         }
 
 
