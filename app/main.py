@@ -90,6 +90,16 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     return {"user_id": user_id}
 
 
+async def get_current_user_optional(token: str = Depends(oauth2_scheme)):
+    if not token:
+        return None
+    try:
+        res = await get_current_user(token)
+        return res
+    except HTTPException as e:
+        return None
+
+
 def process_and_create_plan(file, ui_id, visible_ui_id, name, user_id=None, plan=None):
     # Use a temporary file to process the data
     temp_file_path = None
@@ -164,7 +174,7 @@ async def zip_response_data(data):
 async def calculate(
     request: Request,
     file: UploadFile = Form(...),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(get_current_user_optional),
     state_db_session: AsyncSession = Depends(get_async_state_db),
 ):
     try:
