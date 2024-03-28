@@ -51,7 +51,6 @@ class ZitadelIntrospectTokenValidator(IntrospectTokenValidator):
         return False
 
     def validate_token(self, token, scopes):
-        print(f"Token: {token}\n")
         now = int(time.time())
         if not token:
             raise ValidatorError(
