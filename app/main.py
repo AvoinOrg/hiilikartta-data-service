@@ -469,7 +469,7 @@ async def get_plan(
         "last_index": plan.last_index,
     }
 
-    if plan.calculated_ts and plan.totals is not None:
+    if plan.calculated_ts is not None and plan.report_totals is not None:
         content["report_data"] = {
             "totals": plan.report_totals,
             "areas": plan.report_areas,
