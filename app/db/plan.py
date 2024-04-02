@@ -29,6 +29,7 @@ async def get_plan_without_data_by_ui_id(
         Plan.created_ts,
         Plan.updated_ts,
         Plan.saved_ts,
+        Plan.last_accessed_ts,
         Plan.total_indices,
         Plan.last_index,
         Plan.last_area_calculation_status,
@@ -58,6 +59,7 @@ async def get_plan_with_report_areas_by_ui_id(
         Plan.created_ts,
         Plan.updated_ts,
         Plan.saved_ts,
+        Plan.last_accessed_ts,
         Plan.total_indices,
         Plan.last_index,
         Plan.last_area_calculation_status,
@@ -66,6 +68,7 @@ async def get_plan_with_report_areas_by_ui_id(
         Plan.calculation_updated_ts,
         Plan.calculation_status,
         Plan.report_areas,
+        Plan.report_totals,
     ]
 
     result = await db_session.execute(
