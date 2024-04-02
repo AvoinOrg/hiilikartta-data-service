@@ -13,7 +13,7 @@ def load_bm_curves():
 def load_area_multipliers():
     global area_multipliers_df
     area_multipliers_df = pd.read_csv(
-        f"{data_path}/area_multipliers.csv", index_col="zone_id"
+        f"{data_path}/aluekertoimet.csv", index_col="Lyhenne"
     )
 
 

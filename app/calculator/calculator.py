@@ -235,16 +235,24 @@ class CarbonCalculator:
     async def calculate(self, db_session: AsyncSession) -> CalculationResult:
         bm_curves_df = get_bm_curve_df()
         area_multipliers_df = get_area_multipliers_df()
-        area_multipliers = []
+        area_multipliers_bio = []
+        area_multipliers_ground = []
 
         for index, row in self.zone.iterrows():
             code = row[zoning_col]
 
-            multiplier = 0
+            multiplier_bio = 0
+            multiplier_ground = 0
             if code in area_multipliers_df.index:
-                multiplier = area_multipliers_df.loc[code]["average_efficiency"]
+                multiplier_bio = area_multipliers_df.loc[code][
+                    "Kasvillisuuden hiiltä säästyy"
+                ]
+                multiplier_ground = area_multipliers_df.loc[code][
+                    "Maaperän hiiltä säästyy"
+                ]
 
-            area_multipliers.append(multiplier)
+            area_multipliers_bio.append(multiplier_bio)
+            area_multipliers_ground.append(multiplier_ground)
 
         wkt_list = []
         if self.simplify_calcs:
@@ -342,7 +350,7 @@ class CarbonCalculator:
                     if year_dict is not None:
                         val += year_dict[year] * grid_to_ha
                     if use_multiplier and year != str(current_year):
-                        vals.append(val * (1 - area_multipliers[idx]))
+                        vals.append(val * area_multipliers_bio[idx])
                     else:
                         vals.append(val)
 
@@ -374,7 +382,7 @@ class CarbonCalculator:
                 for idx, base_val in enumerate(base_vals):
                     val = base_val
                     if use_multiplier and year != str(current_year):
-                        vals.append(val * (1 - area_multipliers[idx]))
+                        vals.append(val * area_multipliers_ground[idx])
                     else:
                         vals.append(val)
 
@@ -396,8 +404,8 @@ class CarbonCalculator:
         # calcs_df[cols_to_multiply] = calcs_df[cols_to_multiply].apply(
         #     pd.to_numeric, errors="coerce"
         # )
-        calcs_df[cols_to_multiply] = calcs_df[cols_to_multiply] * c_to_co2
 
+        calcs_df[cols_to_multiply] = calcs_df[cols_to_multiply] * c_to_co2
         return_data: CalculationResult = {
             "areas": calcs_df.to_crs(epsg=4326).to_json(),
             "metadata": {"timestamp": datetime.utcnow()},
