@@ -382,7 +382,7 @@ async def create_update_plan(
             detail="Name parameter is missing.",
         )
 
-    plan = await get_plan_by_ui_id(state_db_session, ui_id)
+    plan = await get_plan_without_data_by_ui_id(state_db_session, ui_id)
 
     if plan:
         plan = process_and_create_plan(file, ui_id, visible_ui_id, name, plan=plan)
