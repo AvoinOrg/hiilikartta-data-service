@@ -135,6 +135,26 @@ async def update_plan(db_session: AsyncSession, plan: Plan) -> bool:
     return plan
 
 
+# async def merge_update_plans(
+#     db_session: AsyncSession, source_plan: Plan, target_plan: Plan
+# ):
+#     # Inspect the source object to get the column attributes
+#     source_inspect = inspect(source_plan.__class__)
+
+#     # Iterate over the mapped columns
+#     for column_attr in source_inspect.mapper.column_attrs:
+#         column_name = column_attr.key
+#         if column_name != "id":
+#             value = getattr(source_plan, column_name)
+#             setattr(target_plan, column_name, value)
+
+#     await db_session.merge(target_plan)
+#     await db_session.commit()
+#     await db_session.refresh(target_plan)
+#     return target_plan
+
+
+
 async def delete_plan(db_session: AsyncSession, id: str) -> bool:
     await db_session.execute(delete(Plan).filter_by(id=id))
     await db_session.commit()
