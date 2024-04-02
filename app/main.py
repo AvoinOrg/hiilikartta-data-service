@@ -26,6 +26,7 @@ from app.types.general import CalculationStatus
 from app.db.connection import get_async_context_gis_db, get_async_state_db
 from app.db.plan import (
     get_plan_stats_by_user_id,
+    get_plan_without_data_by_ui_id,
     update_plan,
     get_plan_by_ui_id,
     create_plan,
