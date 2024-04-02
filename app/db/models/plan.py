@@ -30,24 +30,20 @@ class Plan(Base):
     data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=True)
     created_ts: Mapped[datetime] = mapped_column(
         TIMESTAMP,
-        default=datetime.now,
         server_default=text("current_timestamp(0)"),
     )
     updated_ts: Mapped[datetime] = mapped_column(
         TIMESTAMP,
-        default=datetime.now,
         server_default=text("current_timestamp(0)"),
         onupdate=datetime.now,
     )
     saved_ts: Mapped[datetime] = mapped_column(
         TIMESTAMP,
-        default=datetime.now,
         server_default=text("current_timestamp(0)"),
         nullable=True,
     )
     last_accessed_ts: Mapped[datetime] = mapped_column(
         TIMESTAMP,
-        default=datetime.now,
         server_default=text("current_timestamp(0)"),
     )
     total_indices: Mapped[int] = mapped_column(Integer, nullable=True)
