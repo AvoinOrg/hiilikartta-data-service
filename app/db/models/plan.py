@@ -9,6 +9,7 @@ from app.types.general import CalculationStatus
 from app.db.models.base import Base
 
 
+# GOTCHA: If you add / remove columns, remember to update the queries that specify each column explicitly
 class Plan(Base):
     __tablename__ = "plan"
     __table_args__ = (
