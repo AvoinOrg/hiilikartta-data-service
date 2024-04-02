@@ -199,7 +199,7 @@ async def calculate(
             detail="Name parameter is missing.",
         )
 
-    plan = await get_plan_by_ui_id(state_db_session, ui_id)
+    plan = await get_plan_without_data_by_ui_id(state_db_session, ui_id)
 
     if plan and plan.calculation_status.value == CalculationStatus.PROCESSING.value:
         raise HTTPException(
@@ -207,29 +207,27 @@ async def calculate(
             detail="A calculation with the provided ID is already in progress.",
         )
 
+    if plan:
+        plan = process_and_create_plan(file, ui_id, visible_ui_id, name, plan=plan)
+        plan.calculation_status = CalculationStatus.PROCESSING
+        await update_plan(state_db_session, plan)
     else:
         user_id = current_user.get("user_id")
-        new_plan = process_and_create_plan(file, ui_id, visible_ui_id, name, user_id)
-        new_plan.calculation_status = CalculationStatus.PROCESSING
+        plan = process_and_create_plan(file, ui_id, visible_ui_id, name, user_id)
+        plan.calculation_status = CalculationStatus.PROCESSING
 
-        if plan:
-            new_plan.id = plan.id
-            await update_plan(state_db_session, new_plan)
-        else:
-            await create_plan(
-                state_db_session, new_plan
-            )  # Pass the new plan to create_plan function
+        await create_plan(
+            state_db_session, plan
+        )  # Pass the new plan to create_plan function
 
-        await queue.enqueue(
-            "calculate_piece", ui_id=str(ui_id), retries=3, timeout=172800
-        )
+    await queue.enqueue("calculate_piece", ui_id=str(ui_id), retries=3, timeout=172800)
 
-        return {
-            "status": CalculationStatus.PROCESSING.value,
-            "id": ui_id,
-            "user_id": user_id,
-            "saved_ts": new_plan.saved_ts.timestamp(),
-        }
+    return {
+        "status": CalculationStatus.PROCESSING.value,
+        "id": ui_id,
+        "user_id": plan.user_id,
+        "saved_ts": plan.saved_ts.timestamp(),
+    }
 
 
 @app.get("/calculation")
