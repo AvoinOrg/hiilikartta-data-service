@@ -9,6 +9,7 @@ from fastapi import (
     status,
     Response,
     Request,
+    Security,
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
@@ -67,11 +68,12 @@ app.add_middleware(
 )
 
 # Define OAuth2 scheme
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=True)
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 
 # Function to validate the token and extract the user information
-async def get_current_user(token: str = Depends(oauth2_scheme)):
+async def get_current_user(token: str = Security(oauth2_scheme)):
     validator = ZitadelIntrospectTokenValidator()
     user_id = None
 
@@ -91,7 +93,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     return {"user_id": user_id}
 
 
-async def get_current_user_optional(token: str = Depends(oauth2_scheme)):
+async def get_current_user_optional(token: str = Security(oauth2_scheme_optional)):
     if not token:
         return None
     try:
@@ -213,7 +215,9 @@ async def calculate(
         plan.calculation_status = CalculationStatus.PROCESSING
         await update_plan(state_db_session, plan)
     else:
-        user_id = current_user.get("user_id")
+        user_id = None
+        if current_user:
+            user_id = current_user.get("user_id")
         plan = process_and_create_plan(file, ui_id, visible_ui_id, name, user_id)
         plan.calculation_status = CalculationStatus.PROCESSING
 
