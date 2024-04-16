@@ -135,8 +135,6 @@ def process_and_create_plan(file, ui_id, visible_ui_id, name, user_id=None, plan
         if plan:
             plan.data = data
             plan.total_indices = total_indices
-            plan.last_index = -1
-            plan.last_area_calculation_retries = 0
             plan.saved_ts = datetime.datetime.utcnow()
 
             if plan.user_id is None and user_id:
@@ -213,6 +211,14 @@ async def calculate(
     if plan:
         plan = process_and_create_plan(file, ui_id, visible_ui_id, name, plan=plan)
         plan.calculation_status = CalculationStatus.PROCESSING
+        plan.last_index = -1
+        plan.last_area_calculation_retries = 0
+        plan.report_areas = json.dumps({"type": "FeatureCollection", "features": []})
+        plan.report_totals = None
+        plan.calculated_ts = None
+        plan.calculation_updated_ts = None
+        plan.last_area_calculation_retries = 0
+
         await update_plan(state_db_session, plan)
     else:
         user_id = None
