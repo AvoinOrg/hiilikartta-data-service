@@ -32,7 +32,7 @@ ha_to_grid = 1 / grid_to_ha
 sqm_to_ha = 1 / 10_000  # 1 hectare is 10,000 square meters
 crs = "3067"
 zoning_col = "zoning_code"
-c_to_co2 = 3.6
+c_to_co2 = 44 / 12
 
 
 class CalculationResult(TypedDict):
@@ -370,7 +370,7 @@ class CarbonCalculator:
             rast_masked = rast * ground_carbon_masks[index]
 
             sum = rast_masked.sum().values.item()
-            base_vals.append(sum * grid_to_ha)
+            base_vals.append(sum * grid_to_ha * c_to_co2)
 
             # if (bm_curve_masks[index] is not None):
             #     sum_no_bm_curve_val = (rast_masked * ~bm_curve_masks[index]).sum().values.item()
