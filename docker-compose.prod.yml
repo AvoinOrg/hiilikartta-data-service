@@ -15,11 +15,13 @@ services:
     entrypoint: ["/bin/bash", "/app/docker-entrypoint.prod.sh"]
     networks:
       - proxy-net
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.hiilikartta-data-service.rule=Host(`${DOMAIN}`)"
+      - "traefik.http.routers.hiilikartta-data-service.entrypoints=websecure"
+      - "traefik.http.routers.hiilikartta-data-service.tls.certresolver=myresolver"
+      - "traefik.http.services.hiilikartta-data-service.loadbalancer.server.port=80"
+
 
   worker:
     build: .
@@ -42,11 +44,6 @@ services:
       redis:
         condition: service_started
     restart: unless-stopped
-    logging:
-      driver: json-file
-      options:
-        max-size: "100m"
-        max-file: "3"
 
   redis:
     container_name: hiilikartta-data-redis
@@ -58,11 +55,6 @@ services:
       - "127.0.0.1:6379:6379"
     networks:
       - proxy-net
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
 
   pgbouncer-gis:
     image: edoburu/pgbouncer:latest
@@ -100,49 +92,6 @@ services:
     networks:
       - proxy-net
 
-
-  traefik:
-    image: traefik:v2.10
-    container_name: traefik
-    restart: unless-stopped
-    env_file:
-      - ./.env
-    command:
-      - --api.insecure=true
-      - --api.dashboard=true
-      - --providers.docker=false
-      - --providers.file.filename=/etc/traefik/dynamic_conf.yml
-      - --providers.file.watch=true
-      - --entrypoints.web.address=:80
-      - --entrypoints.websecure.address=:443
-      - --entrypoints.web.http.redirections.entryPoint.to=websecure
-      - --entrypoints.web.http.redirections.entryPoint.scheme=https
-      - --entrypoints.web.http.redirections.entrypoint.permanent=true
-      - --certificatesresolvers.myresolver.acme.tlschallenge=true
-      - --certificatesresolvers.myresolver.acme.email=${DOMAIN_EMAIL}
-      - --certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json
-      # development acme server, without rate limits
-      # - --certificatesresolvers.myresolver.acme.caServer=https://acme-staging-v02.api.letsencrypt.org/directory
-      - --certificatesresolvers.myresolver.acme.caServer=https://acme-v02.api.letsencrypt.org/directory
-      - --log.filePath=/logs/traefik.log
-      - --log.level=INFO
-    ports:
-      - 80:80
-      - 443:443
-      - "127.0.0.1:8080:8080"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - ./letsencrypt:/letsencrypt
-      - ./dynamic_conf.yml:/etc/traefik/dynamic_conf.yml
-      - ${TRAEFIK_LOGS_PATH}:/logs
-    networks:
-      - proxy-net
-    logging:
-      driver: json-file
-      options:
-        max-size: "30m"
-        max-file: "3"
-
   autoheal:
     image: willfarrell/autoheal
     container_name: autoheal
@@ -157,3 +106,4 @@ services:
 
 networks:
   proxy-net:
+    external: true
