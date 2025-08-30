@@ -2,7 +2,6 @@ version: "3.8"
 
 services:
   app:
-    container_name: hiilikartta-data-service
     restart: unless-stopped
     build: .
     env_file:
@@ -25,7 +24,6 @@ services:
 
   worker:
     build: .
-    container_name: hiilikartta-data-worker
     image: hiilikartta-data-service
     command: poetry run saq --workers 25 app.saq_worker.settings --web
     env_file:
@@ -46,7 +44,6 @@ services:
     restart: unless-stopped
 
   redis:
-    container_name: hiilikartta-data-redis
     image: redis:latest
     restart: unless-stopped
     volumes:
@@ -58,7 +55,6 @@ services:
 
   pgbouncer-gis:
     image: edoburu/pgbouncer:latest
-    container_name: pgbouncer-gis
     restart: unless-stopped
     environment:
       DB_HOST: ${GIS_PG_HOST}
@@ -76,7 +72,6 @@ services:
 
   pgbouncer-state:
     image: edoburu/pgbouncer:latest
-    container_name: pgbouncer-state
     restart: unless-stopped
     environment:
       DB_HOST: ${STATE_PG_HOST}
@@ -94,7 +89,6 @@ services:
 
   autoheal:
     image: willfarrell/autoheal
-    container_name: autoheal
     environment:
       - AUTOHEAL_CONTAINER_LABEL=all
       - DOCKER_SOCK=/var/run/docker.sock
