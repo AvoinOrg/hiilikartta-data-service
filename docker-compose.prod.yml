@@ -1,7 +1,7 @@
 version: "3.8"
 
 services:
-  app:
+  app-prod:
     restart: unless-stopped
     build: .
     env_file:
@@ -22,7 +22,7 @@ services:
       - "traefik.http.services.hiilikartta-data-service.loadbalancer.server.port=80"
 
 
-  worker:
+  worker-prod:
     build: .
     image: hiilikartta-data-service
     command: poetry run saq --workers 25 app.saq_worker.settings --web
@@ -37,13 +37,13 @@ services:
     networks:
       - proxy-net
     depends_on:
-      app:
+      app-prod:
         condition: service_started
-      redis:
+      redis-prod:
         condition: service_started
     restart: unless-stopped
 
-  redis:
+  redis-prod:
     image: redis:latest
     restart: unless-stopped
     volumes:
@@ -53,7 +53,7 @@ services:
     networks:
       - proxy-net
 
-  pgbouncer-gis:
+  pgbouncer-gis-prod:
     image: edoburu/pgbouncer:latest
     restart: unless-stopped
     environment:
@@ -70,7 +70,7 @@ services:
     networks:
       - proxy-net
 
-  pgbouncer-state:
+  pgbouncer-state-prod:
     image: edoburu/pgbouncer:latest
     restart: unless-stopped
     environment:
@@ -87,7 +87,7 @@ services:
     networks:
       - proxy-net
 
-  autoheal:
+  autoheal-prod:
     image: willfarrell/autoheal
     environment:
       - AUTOHEAL_CONTAINER_LABEL=all

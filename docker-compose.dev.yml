@@ -1,8 +1,7 @@
 version: "3.8"
 
 services:
-  app:
-    container_name: hiilikartta-data
+  app-dev:
     build: .
     image: hiilikartta-data-service
     env_file:
@@ -17,7 +16,7 @@ services:
       - ./.vscode-server:/root/.vscode-server
       # - ${REMOTE_DB_SSH_KEY}:/root/.ssh/remote_db_rsa:z
       - ${GIT_SSH_KEY}:/root/.ssh/id_rsa:z
-    entrypoint: ["/bin/bash", "/app/docker-entrypoint.sh"]
+    entrypoint: ["/bin/bash", "/app/docker-entrypoint.dev.sh"]
     restart: unless-stopped
     networks:
       - climate-map-network
@@ -26,9 +25,8 @@ services:
         limits:
           memory: 24G
 
-  worker:
+  worker-dev:
     build: .
-    container_name: hiilikartta-data-worker
     image: hiilikartta-data-service
     command: poetry run watchmedo auto-restart -d app/ -R -- saq app.saq_worker.settings -- --workers 3 --web
     env_file:
@@ -43,13 +41,12 @@ services:
     networks:
       - climate-map-network
     depends_on:
-      app:
+      app-dev:
         condition: service_started
-      redis:
+      redis-dev:
         condition: service_started
 
-  redis:
-    container_name: hiilikartta-data-redis
+  redis-dev:
     image: redis:latest
     restart: unless-stopped
     ports:
@@ -59,9 +56,8 @@ services:
     # volumes:
     #   - cache:/data
 
-  pgbouncer-gis:
+  pgbouncer-gis-dev:
     image: edoburu/pgbouncer:latest
-    container_name: pgbouncer-gis
     restart: unless-stopped
     environment:
       DB_HOST: ${GIS_PG_HOST}
@@ -77,9 +73,8 @@ services:
     networks:
       - climate-map-network
 
-  pgbouncer-state:
+  pgbouncer-state-dev:
     image: edoburu/pgbouncer:latest
-    container_name: pgbouncer-state
     restart: unless-stopped
     environment:
       DB_HOST: ${STATE_PG_HOST}
