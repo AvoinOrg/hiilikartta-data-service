@@ -268,3 +268,5 @@ tests/data/*
 notebooks/temp/*
 
 letsencrypt
+
+.devcontainer/devcontainer.json

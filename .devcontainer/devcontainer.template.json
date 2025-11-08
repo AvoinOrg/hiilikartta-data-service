@@ -22,7 +22,8 @@
                 "ms-toolsai.jupyter-keymap",
                 "ms-toolsai.jupyter-renderers",
                 "ms-toolsai.vscode-jupyter-cell-tags",
-                "ms-toolsai.vscode-jupyter-slideshow"
+                "ms-toolsai.vscode-jupyter-slideshow",
+                "openai.chatgpt"
             ],
             "settings": {
                 "[python]": {
@@ -41,7 +42,8 @@
     ]
     // For binding ssh agent to the container, if needed for Git (for example)
     // "mounts": [
-    //     "type=bind,source=${localEnv:HOME}/.ssh/sockets,target=/ssh-sockets"
+    //     "type=bind,source=${localEnv:HOME}/.ssh/sockets,target=/ssh-sockets",
+    // "source=${localEnv:HOME}/.codex,target=/root/.codex,type=bind,consistency=cached"
     //     // "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
     // ],
     // "remoteEnv": {
