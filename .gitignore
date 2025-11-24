@@ -270,3 +270,5 @@ notebooks/temp/*
 letsencrypt
 
 .devcontainer/devcontainer.json
+
+.codex
