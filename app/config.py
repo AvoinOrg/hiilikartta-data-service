@@ -45,8 +45,8 @@ class Settings(BaseSettings):
         "postgresql+asyncpg",
         username=env_vars["GIS_PG_USER"],
         password=env_vars["GIS_PG_PASSWORD"],
-        host="pgbouncer-gis",  # Use the PgBouncer service name for GIS DB
-        port=5432,  # Default PgBouncer port
+        host=env_vars.get("GIS_PG_HOST", "pgbouncer-gis"),
+        port=int(env_vars.get("GIS_PG_PORT", 5432)),
         database=env_vars["GIS_PG_DB"],
     )
 
@@ -54,8 +54,8 @@ class Settings(BaseSettings):
         "postgresql+asyncpg",
         username=env_vars["STATE_PG_USER"],
         password=env_vars["STATE_PG_PASSWORD"],
-        host="pgbouncer-state",  # Use the PgBouncer service name for STATE DB
-        port=5432,  # Default PgBouncer port
+        host=env_vars.get("STATE_PG_HOST", "pgbouncer-state"),
+        port=int(env_vars.get("STATE_PG_PORT", 5432)),
         database=env_vars["STATE_PG_DB"],
     )
 

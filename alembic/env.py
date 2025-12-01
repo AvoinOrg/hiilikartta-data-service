@@ -1,12 +1,10 @@
 import os
 from logging.config import fileConfig
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+
 from alembic import context
 from dotenv import load_dotenv
-from sqlalchemy.engine import URL
+from sqlalchemy import engine_from_config, pool
 
-from app import config as app_config
 from app.db.models.base import Base
 from app.db.models.plan import Plan
 
@@ -23,49 +21,36 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # add your model's MetaData object here
-# for 'autogenerate' support
-# from myapp import mymodel
-# target_metadata = mymodel.Base.metadata
 target_metadata = Base.metadata
 
-
-def get_url():
-    password = env_vars["STATE_PG_PASSWORD"]
-
-    # You can similarly access other parts of the URL
-    username = env_vars["STATE_PG_USER"]
-    host = env_vars["STATE_PG_HOST"]
-    port = env_vars["STATE_PG_PORT"]
-    database = env_vars["STATE_PG_DB"]
-
-    # If you need to reconstruct the URL string manually without masking:
-    db_url = (
-        f"postgresql+psycopg2://{username}:{password}@{host}:{port}/{database}"
-    )
-
-    return db_url
+is_testing = config.get_main_option("is_testing", "False")
 
 
-config.set_main_option("sqlalchemy.url", get_url())
+def _db_url():
+    if is_testing == "True":
+        username = env_vars.get("STATE_PG_TEST_USER", env_vars["STATE_PG_USER"])
+        password = env_vars.get("STATE_PG_TEST_PASSWORD", env_vars["STATE_PG_PASSWORD"])
+        host = env_vars.get(
+            "STATE_PG_TEST_HOST", env_vars.get("STATE_PG_HOST", "pgbouncer-state-test")
+        )
+        port = env_vars.get("STATE_PG_TEST_PORT", env_vars.get("STATE_PG_PORT", "5432"))
+        database = env_vars.get("STATE_PG_TEST_DB", env_vars["STATE_PG_DB"])
+    else:
+        username = env_vars["STATE_PG_USER"]
+        password = env_vars["STATE_PG_PASSWORD"]
+        host = env_vars.get("STATE_PG_HOST", "pgbouncer-state")
+        port = env_vars.get("STATE_PG_PORT", "5432")
+        database = env_vars["STATE_PG_DB"]
 
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
+    return f"postgresql+psycopg2://{username}:{password}@{host}:{port}/{database}"
+
+
+config.set_main_option("sqlalchemy.url", _db_url())
 
 
 def run_migrations_offline() -> None:
-    """Run migrations in 'offline' mode.
+    """Run migrations in 'offline' mode."""
 
-    This configures the context with just a URL
-    and not an Engine, though an Engine is acceptable
-    here as well.  By skipping the Engine creation
-    we don't even need a DBAPI to be available.
-
-    Calls to context.execute() here emit the given string to the
-    script output.
-
-    """
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
@@ -79,12 +64,8 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode.
+    """Run migrations in 'online' mode."""
 
-    In this scenario we need to create an Engine
-    and associate a connection with the context.
-
-    """
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
