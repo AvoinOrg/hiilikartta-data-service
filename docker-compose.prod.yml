@@ -87,6 +87,38 @@ services:
     networks:
       - proxy-net
 
+  state-db-test:
+    image: postgres:15-alpine
+    profiles:
+      - test
+    environment:
+      POSTGRES_DB: ${STATE_PG_TEST_DB:-state_test_db}
+      POSTGRES_USER: ${STATE_PG_TEST_USER:-state_test_user}
+      POSTGRES_PASSWORD: ${STATE_PG_TEST_PASSWORD:-state_test_password}
+    volumes:
+      - state-db-test-data:/var/lib/postgresql/data
+    networks:
+      - proxy-net
+
+  pgbouncer-state-test:
+    image: edoburu/pgbouncer:latest
+    profiles:
+      - test
+    restart: unless-stopped
+    environment:
+      DB_HOST: ${STATE_PG_TEST_HOST:-state-db-test}
+      DB_PORT: ${STATE_PG_TEST_PORT:-5432}
+      DB_USER: ${STATE_PG_TEST_USER:-state_test_user}
+      DB_PASSWORD: ${STATE_PG_TEST_PASSWORD:-state_test_password}
+      DB_NAME: ${STATE_PG_TEST_DB:-state_test_db}
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: session
+      MAX_CLIENT_CONN: 50
+      DEFAULT_POOL_SIZE: 20
+      SERVER_RESET_QUERY: "DISCARD ALL"
+    networks:
+      - proxy-net
+
   autoheal-prod:
     image: willfarrell/autoheal
     environment:
@@ -101,3 +133,5 @@ services:
 networks:
   proxy-net:
     external: true
+volumes:
+  state-db-test-data:

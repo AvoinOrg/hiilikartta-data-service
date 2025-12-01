@@ -37,9 +37,12 @@
         "app-dev",
         "worker-dev",
         "redis-dev",
-        "pgbouncer-gis-dev",
-        "pgbouncer-state-dev"
-    ]
+        "state-db-dev",
+        "state-db-test",
+        "pgbouncer-state-dev",
+        "pgbouncer-state-test",
+        "pgbouncer-gis-dev"
+    ],
     // For binding ssh agent to the container, if needed for Git (for example)
     // "mounts": [
     //     "type=bind,source=${localEnv:HOME}/.ssh/sockets,target=/ssh-sockets",
