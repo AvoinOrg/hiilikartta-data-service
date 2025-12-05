@@ -1,6 +1,7 @@
 import os
 from logging.config import fileConfig
 
+import alembic_postgresql_enum
 from alembic import context
 from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
@@ -28,18 +29,16 @@ is_testing = config.get_main_option("is_testing", "False")
 
 def _db_url():
     if is_testing == "True":
-        username = env_vars.get("STATE_PG_TEST_USER", env_vars["STATE_PG_USER"])
-        password = env_vars.get("STATE_PG_TEST_PASSWORD", env_vars["STATE_PG_PASSWORD"])
-        host = env_vars.get(
-            "STATE_PG_TEST_HOST", env_vars.get("STATE_PG_HOST", "pgbouncer-state-test")
-        )
-        port = env_vars.get("STATE_PG_TEST_PORT", env_vars.get("STATE_PG_PORT", "5432"))
-        database = env_vars.get("STATE_PG_TEST_DB", env_vars["STATE_PG_DB"])
+        username = env_vars.get("STATE_PG_TEST_USER")
+        password = env_vars.get("STATE_PG_TEST_PASSWORD")
+        host = env_vars.get("STATE_PG_TEST_REAL_HOST")
+        port = env_vars.get("STATE_PG_TEST_PORT")
+        database = env_vars.get("STATE_PG_TEST_DB")
     else:
         username = env_vars["STATE_PG_USER"]
         password = env_vars["STATE_PG_PASSWORD"]
-        host = env_vars.get("STATE_PG_HOST", "pgbouncer-state")
-        port = env_vars.get("STATE_PG_PORT", "5432")
+        host = env_vars.get("STATE_PG_REAL_HOST",)
+        port = env_vars.get("STATE_PG_PORT")
         database = env_vars["STATE_PG_DB"]
 
     return f"postgresql+psycopg2://{username}:{password}@{host}:{port}/{database}"

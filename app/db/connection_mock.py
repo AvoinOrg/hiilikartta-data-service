@@ -131,20 +131,14 @@ async def async_setup():
         alembic_cfg = Config("alembic.ini")
         alembic_cfg.set_main_option("is_testing", "True")
 
-        await session.begin()
-        command.downgrade(alembic_cfg, "base")
-        await session.commit()
-
-        command.upgrade(alembic_cfg, "head")
+    command.downgrade(alembic_cfg, "base")
+    command.upgrade(alembic_cfg, "head")
 
 
 async def async_teardown():
-    async with connection.get_async_context_state_db() as session:
-        await session.begin()
-        alembic_cfg = Config("alembic.ini")
-        alembic_cfg.set_main_option("is_testing", "True")
-        command.downgrade(alembic_cfg, "base")
-        await session.commit()
+    alembic_cfg = Config("alembic.ini")
+    alembic_cfg.set_main_option("is_testing", "True")
+    command.downgrade(alembic_cfg, "base")
 
 
 @pytest.fixture(scope="session", autouse=True)
