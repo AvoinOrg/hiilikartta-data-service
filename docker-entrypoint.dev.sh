@@ -1,4 +1,13 @@
 #!/bin/bash
+if [ -f /root/dev/.bash_history ]; then
+    echo "History file exists"
+    cp /root/dev/.bash_history /root/.bash_history
+else
+    cp /root/.bash_history /root/dev/.bash_history
+fi
+rm -f /root/.bash_history
+ln -s /root/dev/.bash_history /root/.bash_history
+
 source /root/.bashrc >/dev/null 2>&1
 
 poetry install

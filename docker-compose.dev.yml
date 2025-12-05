@@ -6,16 +6,17 @@ services:
     image: hiilikartta-data-service
     env_file:
       - ./.env
+    environment:
+      REDIS_HOST: "redis-dev"
+      REDIS_PORT: "6379"
     ports:
       - "${DEV_PORT}:80"
       - "${NOTEBOOK_PORT}:8888"
     volumes:
       - .:/app:z
       - ./.cache:/root/.cache
-      # - ./.conda-pkgs:/root/conda/pkgs
       - ./.vscode-server:/root/.vscode-server
-      # - ${REMOTE_DB_SSH_KEY}:/root/.ssh/remote_db_rsa:z
-      - ${GIT_SSH_KEY}:/root/.ssh/id_rsa:z
+      - python-dev:/root/dev
     entrypoint: ["/bin/bash", "/app/docker-entrypoint.dev.sh"]
     restart: unless-stopped
     networks:
@@ -34,9 +35,12 @@ services:
   worker-dev:
     build: .
     image: hiilikartta-data-service
-    command: poetry run watchmedo auto-restart -d app/ -R -- saq app.saq_worker.settings -- --workers 3 --web
+    # command: poetry run watchmedo auto-restart --directory='app' --recursive -- saq app.saq_worker.settings --workers 3 --web
     env_file:
       - ./.env
+    environment:
+      REDIS_HOST: "redis-dev"
+      REDIS_PORT: "6379"
     volumes:
       - ./project:/usr/src/app
       - .:/app:z
@@ -44,6 +48,7 @@ services:
     ports:
       - "${SAQ_WEB_PORT}:8080"
     restart: unless-stopped
+    entrypoint: ["/bin/bash", "/app/docker-entrypoint-worker.dev.sh"]
     networks:
       - climate-map-network
     depends_on:
@@ -64,21 +69,25 @@ services:
 
   state-db-dev:
     image: postgres:15-alpine
+    env_file:
+      - ./.env
     environment:
-      POSTGRES_DB: ${STATE_PG_DB:-state_dev_db}
-      POSTGRES_USER: ${STATE_PG_USER:-state_dev_user}
-      POSTGRES_PASSWORD: ${STATE_PG_PASSWORD:-state_dev_password}
+      POSTGRES_DB: ${STATE_PG_DB}
+      POSTGRES_USER: ${STATE_PG_USER}
+      POSTGRES_PASSWORD: ${STATE_PG_PASSWORD}
     volumes:
-      - state-db-dev-data:/var/lib/postgresql/data
+      - ./data/state-db-dev:/var/lib/postgresql/data
     networks:
       - climate-map-network
 
   state-db-test:
     image: postgres:15-alpine
+    env_file:
+      - ./.env
     environment:
-      POSTGRES_DB: ${STATE_PG_TEST_DB:-state_test_db}
-      POSTGRES_USER: ${STATE_PG_TEST_USER:-state_test_user}
-      POSTGRES_PASSWORD: ${STATE_PG_TEST_PASSWORD:-state_test_password}
+      POSTGRES_DB: ${STATE_PG_TEST_DB}
+      POSTGRES_USER: ${STATE_PG_TEST_USER}
+      POSTGRES_PASSWORD: ${STATE_PG_TEST_PASSWORD}
     volumes:
       - state-db-test-data:/var/lib/postgresql/data
     networks:
@@ -86,6 +95,8 @@ services:
 
   pgbouncer-gis-dev:
     image: edoburu/pgbouncer:latest
+    env_file:
+      - ./.env
     restart: unless-stopped
     environment:
       DB_HOST: ${GIS_PG_HOST}
@@ -103,11 +114,15 @@ services:
 
   pgbouncer-state-dev:
     image: edoburu/pgbouncer:latest
+    env_file:
+      - ./.env
     restart: unless-stopped
+    ports:
+      - ${STATE_PG_OUT_PORT}:${STATE_PG_PORT}
     environment:
       # Point pgbouncer at the actual state database, not itself
       DB_HOST: state-db-dev
-      DB_PORT: ${STATE_PG_PORT:-5432}
+      DB_PORT: ${STATE_PG_PORT}
       DB_USER: ${STATE_PG_USER}
       DB_PASSWORD: ${STATE_PG_PASSWORD}
       DB_NAME: ${STATE_PG_DB}
@@ -123,14 +138,18 @@ services:
 
   pgbouncer-state-test:
     image: edoburu/pgbouncer:latest
+    env_file:
+      - ./.env
     restart: unless-stopped
+    ports:
+      - ${STATE_PG_TEST_OUT_PORT}:${STATE_PG_TEST_PORT}
     environment:
       # Point pgbouncer at the actual state test database, not itself
       DB_HOST: state-db-test
-      DB_PORT: ${STATE_PG_TEST_PORT:-5432}
-      DB_USER: ${STATE_PG_TEST_USER:-state_test_user}
-      DB_PASSWORD: ${STATE_PG_TEST_PASSWORD:-state_test_password}
-      DB_NAME: ${STATE_PG_TEST_DB:-state_test_db}
+      DB_PORT: ${STATE_PG_TEST_PORT}
+      DB_USER: ${STATE_PG_TEST_USER}
+      DB_PASSWORD: ${STATE_PG_TEST_PASSWORD}
+      DB_NAME: ${STATE_PG_TEST_DB}
       AUTH_TYPE: scram-sha-256
       POOL_MODE: session
       MAX_CLIENT_CONN: 5
@@ -162,6 +181,7 @@ networks:
   climate-map-network:
     external: true
 volumes:
-  state-db-dev-data:
+  python-dev:
+    driver: local
   state-db-test-data:
 #   poetry-cache:

@@ -6,6 +6,9 @@ services:
     build: .
     env_file:
       - ./.env
+    environment:
+      REDIS_HOST: "redis-prod"
+      REDIS_PORT: "6379"
     ports:
       - "8000:80"
     volumes:
@@ -25,9 +28,12 @@ services:
   worker-prod:
     build: .
     image: hiilikartta-data-service
-    command: poetry run saq --workers 25 app.saq_worker.settings --web
+    command: /bin/bash -lc "cd /app && poetry run saq --workers 25 app.saq_worker.settings --web"
     env_file:
       - ./.env
+    environment:
+      REDIS_HOST: "redis-prod"
+      REDIS_PORT: "6379"
     volumes:
       - ./project:/usr/src/app
       - .:/app:z
@@ -92,9 +98,9 @@ services:
     profiles:
       - test
     environment:
-      POSTGRES_DB: ${STATE_PG_TEST_DB:-state_test_db}
-      POSTGRES_USER: ${STATE_PG_TEST_USER:-state_test_user}
-      POSTGRES_PASSWORD: ${STATE_PG_TEST_PASSWORD:-state_test_password}
+      POSTGRES_DB: ${STATE_PG_TEST_DB}
+      POSTGRES_USER: ${STATE_PG_TEST_USER}
+      POSTGRES_PASSWORD: ${STATE_PG_TEST_PASSWORD}
     volumes:
       - state-db-test-data:/var/lib/postgresql/data
     networks:
@@ -106,11 +112,11 @@ services:
       - test
     restart: unless-stopped
     environment:
-      DB_HOST: ${STATE_PG_TEST_HOST:-state-db-test}
-      DB_PORT: ${STATE_PG_TEST_PORT:-5432}
-      DB_USER: ${STATE_PG_TEST_USER:-state_test_user}
-      DB_PASSWORD: ${STATE_PG_TEST_PASSWORD:-state_test_password}
-      DB_NAME: ${STATE_PG_TEST_DB:-state_test_db}
+      DB_HOST: state-db-test
+      DB_PORT: ${STATE_PG_TEST_PORT}
+      DB_USER: ${STATE_PG_TEST_USER}
+      DB_PASSWORD: ${STATE_PG_TEST_PASSWORD}
+      DB_NAME: ${STATE_PG_TEST_DB}
       AUTH_TYPE: scram-sha-256
       POOL_MODE: session
       MAX_CLIENT_CONN: 50

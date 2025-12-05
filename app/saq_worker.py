@@ -253,8 +253,8 @@ async def calculate_totals(ctx, *, ui_id: str):
 
 async def handle_finished_calcs(ctx):
     r = redis.Redis(
-        host="redis",  # or your Redis server's hostname
-        port=6379,  # default Redis port
+        host=global_settings.redis_host,  # or your Redis server's hostname
+        port=int(global_settings.redis_port),  # default Redis port
     )
     stats_data = {}
 

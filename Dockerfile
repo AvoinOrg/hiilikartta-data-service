@@ -1,12 +1,14 @@
-FROM python:3.9.15
+FROM python:3.11
 
 SHELL ["/bin/bash", "-l", "-c"]
 
 WORKDIR /app
 
 RUN apt-get update &&\ 
-    apt-get install autossh -y &&\
     pip install poetry &&\
+    touch /root/.bash_history &&\
+    echo 'PS0="$PS0"'"'"'$(history -a)'"'" >> /root/.bashrc &&\
+    echo 'PROMPT_COMMAND="history -n; $PROMPT_COMMAND"' >> /root/.bashrc &&\
     printf "  PasswordAuthentication yes\n  KbdInteractiveAuthentication yes" >> /etc/ssh/ssh_config &&\
     sed -i '1,6d' /root/.bashrc &&\
-    echo "poetry shell" >> /root/.bashrc
+    echo "source \"\$(poetry env info --path)/bin/activate\"" >> /root/.bashrc
