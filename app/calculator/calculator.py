@@ -6,7 +6,6 @@ import geopandas as gpd
 import xarray as xr
 import numpy as np
 from datetime import datetime
-from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Any, Dict, TypedDict, List
 import json
 from warnings import simplefilter
@@ -96,9 +95,9 @@ class CarbonCalculator:
     #     return zone
 
     async def get_rasts(
-        self, db_session, wkt_list: List[str], crs: str
+        self, wkt_list: List[str], crs: str
     ) -> List[xr.DataArray]:
-        rasts = await fetch_rasters_for_regions(db_session, wkt_list, crs)
+        rasts = await fetch_rasters_for_regions(wkt_list, crs)
         sorted_rasts = sorted(rasts, key=lambda x: x[1])
 
         rast_das = []
@@ -121,8 +120,8 @@ class CarbonCalculator:
 
         return rast_das
 
-    async def get_variables(self, db_session, ids: List[str]):
-        variable_rows, col_names = await fetch_variables_for_ids(db_session, ids)
+    async def get_variables(self, ids: List[str]):
+        variable_rows, col_names = await fetch_variables_for_ids(ids)
 
         variables_dict = {}
         for row in variable_rows:
@@ -132,9 +131,9 @@ class CarbonCalculator:
         return variables_dict
 
     async def get_bio_carbon(
-        self, db_session, wkts: List[str], crs: str
+        self, wkts: List[str], crs: str
     ) -> List[xr.DataArray]:
-        rasts = await fetch_bio_carbon_for_regions(db_session, wkts, crs)
+        rasts = await fetch_bio_carbon_for_regions(wkts, crs)
         sorted_rasts = sorted(rasts, key=lambda x: x[1])
 
         rast_das = []
@@ -157,9 +156,9 @@ class CarbonCalculator:
         return rast_das
 
     async def get_ground_carbon(
-        self, db_session, wkts: List[str], crs: str
+        self, wkts: List[str], crs: str
     ) -> List[xr.DataArray]:
-        rasts = await fetch_ground_carbon_for_regions(db_session, wkts, crs)
+        rasts = await fetch_ground_carbon_for_regions(wkts, crs)
         sorted_rasts = sorted(rasts, key=lambda x: x[1])
 
         rast_das = []
@@ -232,7 +231,7 @@ class CarbonCalculator:
             "metadata": {"timestamp": datetime.utcnow()},
         }
 
-    async def calculate(self, db_session: AsyncSession) -> CalculationResult:
+    async def calculate(self) -> CalculationResult:
         bm_curves_df = get_bm_curve_df()
         area_multipliers_df = get_area_multipliers_df()
         area_multipliers_bio = []
@@ -265,7 +264,7 @@ class CarbonCalculator:
         else:
             wkt_list = self.zone.buffered_geometry.to_wkt().tolist()
 
-        rasts = await self.get_rasts(db_session, wkt_list=wkt_list, crs=crs)
+        rasts = await self.get_rasts(wkt_list=wkt_list, crs=crs)
 
         i = 0
         rast_overlaps = []
@@ -285,12 +284,10 @@ class CarbonCalculator:
 
         uniq_ids_list = [int(val) for val in uniq_vals]
 
-        variables_dict = await self.get_variables(db_session, uniq_ids_list)
+        variables_dict = await self.get_variables(uniq_ids_list)
 
-        bio_carbon_rasts = await self.get_bio_carbon(db_session, wkt_list, crs=crs)
-        ground_carbon_rasts = await self.get_ground_carbon(
-            db_session, wkt_list, crs=crs
-        )
+        bio_carbon_rasts = await self.get_bio_carbon(wkt_list, crs=crs)
+        ground_carbon_rasts = await self.get_ground_carbon(wkt_list, crs=crs)
 
         bio_carbon_masks = []
         i = 0

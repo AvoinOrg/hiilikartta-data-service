@@ -8,8 +8,7 @@ import traceback
 
 from app.calculator.calculator import CarbonCalculator
 from app.types.general import CalculationStatus
-from app.db.connection import get_async_context_gis_db, get_async_context_state_db
-from app.calculator.calculator import CarbonCalculator
+from app.db.connection import get_async_context_state_db
 from app.db.plan import (
     add_feature_collection_to_plan_areas,
     get_feature_from_plan_by_ui_id_and_index,
@@ -41,9 +40,8 @@ async def calculate(ctx, *, ui_id: str):
 
     calc_data = None
     if plan:
-        async with get_async_context_gis_db() as gis_db_session:
-            cc = CarbonCalculator(plan.data)
-            calc_data = await cc.calculate(gis_db_session)
+        cc = CarbonCalculator(plan.data)
+        calc_data = await cc.calculate()
 
         async with get_async_context_state_db() as state_db_session:
             plan = await get_plan_by_ui_id(state_db_session, UUID(ui_id))
@@ -154,18 +152,20 @@ async def calculate_piece(ctx, *, ui_id: str):
                 calc_data = None
 
                 try:
-                    async with get_async_context_gis_db() as gis_db_session:
-                        cc = CarbonCalculator(
-                            {"type": "FeatureCollection", "features": [feature]},
-                        )
-                        calc_data = await cc.calculate(gis_db_session)
+                    cc = CarbonCalculator(
+                        {"type": "FeatureCollection", "features": [feature]},
+                    )
+                    calc_data = await cc.calculate()
 
                     async with get_async_context_state_db() as state_db_session:
                         plan = await get_plan_without_data_by_ui_id(
                             state_db_session, UUID(ui_id)
                         )
 
-                        if calc_data == None:
+                        if plan is None:
+                            raise ValueError("Plan not found during update.")
+
+                        if calc_data is None:
                             raise ValueError("No data returned by calculator")
                         else:
                             await add_feature_collection_to_plan_areas(

@@ -1,14 +1,26 @@
-from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.sql import text
-from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List
+from contextlib import asynccontextmanager
+from typing import AsyncIterator, List, Optional
 
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import text
+
+from app.db.connection import get_async_context_gis_db
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
 
-async def fetch_variables_for_ids(db_session: AsyncSession, ids: List[str]):
+@asynccontextmanager
+async def _get_session(provided_session: Optional[AsyncSession]) -> AsyncIterator[AsyncSession]:
+    if provided_session is not None:
+        yield provided_session
+    else:
+        async with get_async_context_gis_db() as session:
+            yield session
+
+
+async def fetch_variables_for_ids(ids: List[str], db_session: Optional[AsyncSession] = None):
     try:
         ids_int = tuple([int(item) for item in ids])
         statement = text(
@@ -19,17 +31,19 @@ async def fetch_variables_for_ids(db_session: AsyncSession, ids: List[str]):
             """
         )
 
-        result = await db_session.execute(statement, {"ids": ids_int})
-        col_names = list(result.keys())
+        async with _get_session(db_session) as session:
+            result = await session.execute(statement, {"ids": ids_int})
+            col_names = list(result.keys())
+            rows = result.fetchall()
 
-        return result.fetchall(), col_names
+        return rows, col_names
 
     except SQLAlchemyError as ex:
         logger.exception(ex)
 
 
 async def fetch_rasters_for_regions(
-    db_session: AsyncSession, wkts: List[str], crs: str
+    wkts: List[str], crs: str, db_session: Optional[AsyncSession] = None
 ):
     crs_int = int(crs)
 
@@ -67,16 +81,18 @@ async def fetch_rasters_for_regions(
             """
         )
 
-        result = await db_session.execute(statement, {"crs": crs_int})
+        async with _get_session(db_session) as session:
+            result = await session.execute(statement, {"crs": crs_int})
+            rows = result.fetchall()
 
         # Fetching all rows, each row containing a raster for a WKT geometry
-        return result.fetchall()
+        return rows
     except SQLAlchemyError as ex:
         logger.exception(ex)
 
 
 async def fetch_bio_carbon_for_regions(
-    db_session: AsyncSession, wkts: List[str], crs: str
+    wkts: List[str], crs: str, db_session: Optional[AsyncSession] = None
 ):
     crs_int = int(crs)
 
@@ -113,16 +129,18 @@ async def fetch_bio_carbon_for_regions(
             """
         )
 
-        result = await db_session.execute(statement, {"crs": crs_int})
+        async with _get_session(db_session) as session:
+            result = await session.execute(statement, {"crs": crs_int})
+            rows = result.fetchall()
 
-        return result.fetchall()
+        return rows
 
     except SQLAlchemyError as ex:
         logger.exception(ex)
 
 
 async def fetch_ground_carbon_for_regions(
-    db_session: AsyncSession, wkts: List[str], crs: str
+    wkts: List[str], crs: str, db_session: Optional[AsyncSession] = None
 ):
     crs_int = int(crs)
 
@@ -160,9 +178,11 @@ async def fetch_ground_carbon_for_regions(
             """
         )
 
-        result = await db_session.execute(statement, {"crs": crs_int})
+        async with _get_session(db_session) as session:
+            result = await session.execute(statement, {"crs": crs_int})
+            rows = result.fetchall()
 
-        return result.fetchall()
+        return rows
 
     except SQLAlchemyError as ex:
         logger.exception(ex)

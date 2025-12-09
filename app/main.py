@@ -24,7 +24,7 @@ from typing import Dict, Any
 import datetime
 
 from app.types.general import CalculationStatus
-from app.db.connection import get_async_context_gis_db, get_async_state_db
+from app.db.connection import get_async_state_db
 from app.db.plan import (
     get_plan_stats_by_user_id,
     get_plan_without_data_by_ui_id,

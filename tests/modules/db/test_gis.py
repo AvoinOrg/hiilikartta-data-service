@@ -27,7 +27,7 @@ def event_loop():
 @pytest.mark.asyncio
 async def test_fetch_variables_for_ids():
     async with get_async_context_gis_db() as session:
-        rows, column_names = await fetch_variables_for_ids(session, ["100", "2"])
+        rows, column_names = await fetch_variables_for_ids(["100", "2"], session)
         assert rows is not None
         assert isinstance(column_names, list)
 
@@ -35,14 +35,14 @@ async def test_fetch_variables_for_ids():
 @pytest.mark.asyncio
 async def test_fetch_rasters_for_regions():
     async with get_async_context_gis_db() as session:
-        rows = await fetch_rasters_for_regions(session, [TEST_WKT, TEST_WKT], TEST_CRS)
+        rows = await fetch_rasters_for_regions([TEST_WKT, TEST_WKT], TEST_CRS, session)
         assert rows is not None
 
 
 @pytest.mark.asyncio
 async def test_fetch_bio_carbon_for_regions():
     async with get_async_context_gis_db() as session:
-        result = await fetch_bio_carbon_for_regions(session, [TEST_WKT, TEST_WKT], TEST_CRS)
+        result = await fetch_bio_carbon_for_regions([TEST_WKT, TEST_WKT], TEST_CRS, session)
         assert result is not None
     # Add more assertions based on expected results
 
@@ -51,7 +51,7 @@ async def test_fetch_bio_carbon_for_regions():
 @pytest.mark.asyncio
 async def test_fetch_ground_carbon_for_regions():
     async with get_async_context_gis_db() as session:
-        result = await fetch_ground_carbon_for_regions(session, [TEST_WKT, TEST_WKT], TEST_CRS)
+        result = await fetch_ground_carbon_for_regions([TEST_WKT, TEST_WKT], TEST_CRS, session)
         assert result is not None
 
 
