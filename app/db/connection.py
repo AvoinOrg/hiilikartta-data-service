@@ -1,13 +1,12 @@
+import os
 from collections.abc import AsyncGenerator
-from doctest import debug
 from http.client import HTTPException
+from typing import Callable
+from contextlib import asynccontextmanager
 
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-from contextlib import asynccontextmanager
-from sqlalchemy.pool import NullPool
-from typing import Callable, AsyncGenerator
 
 from app import config
 from app.utils.logger import get_logger
@@ -19,20 +18,21 @@ gis_url = global_settings.gis_pg_url
 state_url = global_settings.state_pg_url
 debug = global_settings.is_debug
 
+# Keep pools bounded so connections queue instead of exhausting Postgres.
+pool_kwargs = {
+    "pool_size": int(os.getenv("DB_POOL_SIZE", "10")),
+    "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "0")),
+    "pool_timeout": int(os.getenv("DB_POOL_TIMEOUT", "30")),
+    "pool_recycle": int(os.getenv("DB_POOL_RECYCLE", "1800")),
+    "pool_pre_ping": True,
+}
+
 gis_engine = create_async_engine(
-    gis_url,
-    future=True,
-    echo=False,
-    poolclass=NullPool,
-    json_serializer=jsonable_encoder,
+    gis_url, future=True, echo=False, json_serializer=jsonable_encoder, **pool_kwargs
 )
 
 state_engine = create_async_engine(
-    state_url,
-    future=True,
-    echo=False,
-    poolclass=NullPool,
-    json_serializer=jsonable_encoder,
+    state_url, future=True, echo=False, json_serializer=jsonable_encoder, **pool_kwargs
 )
 
 # expire_on_commit=False will prevent attributes from being expired

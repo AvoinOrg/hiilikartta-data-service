@@ -31,13 +31,13 @@ def _db_url():
     if is_testing == "True":
         username = env_vars.get("STATE_PG_TEST_USER")
         password = env_vars.get("STATE_PG_TEST_PASSWORD")
-        host = env_vars.get("STATE_PG_TEST_REAL_HOST")
+        host = env_vars.get("STATE_PG_TEST_HOST")
         port = env_vars.get("STATE_PG_TEST_PORT")
         database = env_vars.get("STATE_PG_TEST_DB")
     else:
         username = env_vars["STATE_PG_USER"]
         password = env_vars["STATE_PG_PASSWORD"]
-        host = env_vars.get("STATE_PG_REAL_HOST",)
+        host = env_vars.get("STATE_PG_HOST",)
         port = env_vars.get("STATE_PG_PORT")
         database = env_vars["STATE_PG_DB"]
 

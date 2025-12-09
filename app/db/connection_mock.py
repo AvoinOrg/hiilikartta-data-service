@@ -21,14 +21,13 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.pool import NullPool
 
 from app import config as app_config
 from app.db import connection
 
 TEST_STATE_USER = os.getenv("STATE_PG_TEST_USER", "state_test_user")
 TEST_STATE_PASSWORD = os.getenv("STATE_PG_TEST_PASSWORD", "state_test_password")
-TEST_STATE_HOST = os.getenv("STATE_PG_TEST_HOST", "pgbouncer-state-test")
+TEST_STATE_HOST = os.getenv("STATE_PG_TEST_HOST", "state-db-test")
 TEST_STATE_PORT = os.getenv("STATE_PG_TEST_PORT", "5432")
 TEST_STATE_DB = os.getenv("STATE_PG_TEST_DB", "state_test_db")
 
@@ -53,12 +52,20 @@ def _configure_state_env() -> None:
 
 
 def _build_test_state_engine() -> Tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
+    pool_kwargs = {
+        "pool_size": int(os.getenv("DB_POOL_SIZE", "10")),
+        "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "0")),
+        "pool_timeout": int(os.getenv("DB_POOL_TIMEOUT", "30")),
+        "pool_recycle": int(os.getenv("DB_POOL_RECYCLE", "1800")),
+        "pool_pre_ping": True,
+    }
+
     test_engine = create_async_engine(
         TEST_STATE_DATABASE_URL,
         future=True,
         echo=False,
-        poolclass=NullPool,
         json_serializer=jsonable_encoder,
+        **pool_kwargs,
     )
     session_factory = async_sessionmaker(
         test_engine,
