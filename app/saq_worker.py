@@ -297,7 +297,10 @@ async def handle_finished_calcs(ctx):
 async def startup(ctx):
     lock_key = "startup_lock"
     lock_value = str(uuid.uuid4())
-    r = redis.Redis(host="redis", port=6379)
+    r = redis.Redis(
+        host=global_settings.redis_host,
+        port=int(global_settings.redis_port),
+    )
 
     # Attempt to acquire the lock
     if r.set(lock_key, lock_value, ex=120, nx=True):
