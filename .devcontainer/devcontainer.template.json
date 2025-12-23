@@ -38,10 +38,7 @@
         "worker-dev",
         "redis-dev",
         "state-db-dev",
-        "state-db-test",
-        "pgbouncer-state-dev",
-        "pgbouncer-state-test",
-        "pgbouncer-gis-dev"
+        "state-db-test"
     ],
     // For binding ssh agent to the container, if needed for Git (for example)
     // "mounts": [
