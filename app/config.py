@@ -65,6 +65,26 @@ class Settings(BaseSettings):
     zitadel_client_id: str = os.getenv("ZITADEL_CLIENT_ID") or ""
     zitadel_client_secret: str = os.getenv("ZITADEL_CLIENT_SECRET") or ""
 
+    gis_local_max_concurrent: int = int(env_vars.get("GIS_LOCAL_MAX_CONCURRENT", "3"))
+
+    # Database pool settings
+    db_pool_size: int = int(env_vars.get("DB_POOL_SIZE", "10"))
+    db_max_overflow: int = int(env_vars.get("DB_MAX_OVERFLOW", "0"))
+    db_pool_timeout: int = int(env_vars.get("DB_POOL_TIMEOUT", "30"))
+    db_pool_recycle: int = int(env_vars.get("DB_POOL_RECYCLE", "1800"))
+
+    # Distributed GIS semaphore settings
+    gis_distributed_max_concurrent: int = int(env_vars.get("GIS_DISTRIBUTED_MAX_CONCURRENT", "5"))
+    gis_slot_ttl: int = int(env_vars.get("GIS_SLOT_TTL", "7200"))  # 2 hours default
+    gis_operation_timeout: float = float(env_vars.get("GIS_OPERATION_TIMEOUT", "3600"))  # 1 hour default
+
+    # Test database settings (optional, for testing)
+    state_pg_test_user: str = env_vars.get("STATE_PG_TEST_USER", "state_test_user")
+    state_pg_test_password: str = env_vars.get("STATE_PG_TEST_PASSWORD", "state_test_password")
+    state_pg_test_host: str = env_vars.get("STATE_PG_TEST_HOST", "state-db-test")
+    state_pg_test_port: str = env_vars.get("STATE_PG_TEST_PORT", "5432")
+    state_pg_test_db: str = env_vars.get("STATE_PG_TEST_DB", "state_test_db")
+
 
 @lru_cache
 def get_settings():
