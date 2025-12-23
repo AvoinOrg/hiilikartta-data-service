@@ -1,4 +1,4 @@
-import os
+import asyncio
 from collections.abc import AsyncGenerator
 from http.client import HTTPException
 from typing import Callable
@@ -13,6 +13,11 @@ from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+
+class PoolExhaustedError(Exception):
+    """Raised when the connection pool is exhausted and retries are exceeded."""
+    pass
+
 global_settings = config.get_settings()
 gis_url = global_settings.gis_pg_url
 state_url = global_settings.state_pg_url
@@ -20,10 +25,10 @@ debug = global_settings.is_debug
 
 # Keep pools bounded so connections queue instead of exhausting Postgres.
 pool_kwargs = {
-    "pool_size": int(os.getenv("DB_POOL_SIZE", "10")),
-    "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "0")),
-    "pool_timeout": int(os.getenv("DB_POOL_TIMEOUT", "30")),
-    "pool_recycle": int(os.getenv("DB_POOL_RECYCLE", "1800")),
+    "pool_size": global_settings.db_pool_size,
+    "max_overflow": global_settings.db_max_overflow,
+    "pool_timeout": global_settings.db_pool_timeout,
+    "pool_recycle": global_settings.db_pool_recycle,
     "pool_pre_ping": True,
 }
 
@@ -66,6 +71,92 @@ async def base_async_db_context(
         await session.close()
 
 
+@asynccontextmanager
+async def base_async_db_context_with_retry(
+    session_generator: Callable[[], AsyncSession],
+    logger_msg: str,
+    max_retries: int = 5,
+    base_delay: float = 1.0,
+    max_delay: float = 60.0,
+) -> AsyncGenerator:
+    """
+    Context manager with retry logic for pool exhaustion and connection errors.
+    Uses exponential backoff between retries.
+    
+    Args:
+        session_generator: Callable that creates a new session
+        logger_msg: Message to log when acquiring session
+        max_retries: Maximum number of retry attempts (default: 5)
+        base_delay: Initial delay between retries in seconds (default: 1.0)
+        max_delay: Maximum delay between retries in seconds (default: 60.0)
+    
+    Raises:
+        PoolExhaustedError: If all retries are exhausted
+        SQLAlchemyError: If error is not retryable
+    """
+    last_exception = None
+    
+    for attempt in range(max_retries):
+        session = None
+        try:
+            session = session_generator()
+            logger.debug(f"{logger_msg} (attempt {attempt + 1})")
+            yield session
+            await session.commit()
+            return  # Success, exit the retry loop
+            
+        except SQLAlchemyError as e:
+            last_exception = e
+            if session is not None:
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass  # Ignore rollback errors
+            
+            error_msg = str(e).lower()
+            
+            # Check if this is a pool exhaustion or connection error worth retrying
+            is_retryable = any(phrase in error_msg for phrase in [
+                "timeout",
+                "connection",
+                "pool",
+                "too many clients",
+                "remaining connection slots",
+                "could not connect",
+                "connection refused",
+                "server closed the connection",
+            ])
+            
+            if not is_retryable or attempt == max_retries - 1:
+                raise
+            
+            delay = min(base_delay * (2 ** attempt), max_delay)
+            logger.warning(
+                f"Database connection failed (attempt {attempt + 1}/{max_retries}), "
+                f"retrying in {delay:.1f}s: {e}"
+            )
+            await asyncio.sleep(delay)
+            
+        except HTTPException as http_ex:
+            if session is not None:
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass
+            raise http_ex
+            
+        finally:
+            if session is not None:
+                try:
+                    await session.close()
+                except Exception:
+                    pass
+    
+    raise PoolExhaustedError(
+        f"Failed to acquire database connection after {max_retries} attempts"
+    ) from last_exception
+
+
 async def get_async_state_db() -> AsyncGenerator:
     async with base_async_db_context(
         StateAsyncSessionLocal, f"ASYNC Pool: {state_engine.pool.status()}"
@@ -92,5 +183,25 @@ async def get_async_gis_db() -> AsyncGenerator:
 async def get_async_context_gis_db() -> AsyncGenerator:
     async with base_async_db_context(
         GisAsyncSessionLocal, f"ASYNC Pool: {gis_engine.pool.status()}"
+    ) as session:
+        yield session
+
+
+@asynccontextmanager
+async def get_async_context_gis_db_with_retry(
+    max_retries: int = 5,
+    base_delay: float = 1.0,
+) -> AsyncGenerator:
+    """
+    GIS DB context with automatic retry on pool exhaustion.
+    
+    Use this for long-running GIS operations that should retry on
+    transient connection failures.
+    """
+    async with base_async_db_context_with_retry(
+        GisAsyncSessionLocal,
+        f"ASYNC Pool: {gis_engine.pool.status()}",
+        max_retries=max_retries,
+        base_delay=base_delay,
     ) as session:
         yield session

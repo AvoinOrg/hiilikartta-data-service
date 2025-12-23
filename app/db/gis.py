@@ -5,7 +5,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import text
 
-from app.db.connection import get_async_context_gis_db
+from app.db.connection import get_async_context_gis_db, get_async_context_gis_db_with_retry
+from app.db.gis_semaphore import gis_operation_slot
+from app.db.redis_semaphore import distributed_gis_slot
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -20,6 +22,41 @@ async def _get_session(provided_session: Optional[AsyncSession]) -> AsyncIterato
             yield session
 
 
+@asynccontextmanager
+async def _get_throttled_session(
+    provided_session: Optional[AsyncSession],
+    use_distributed_lock: bool = True,
+) -> AsyncIterator[AsyncSession]:
+    """
+    Get a GIS session with throttling to prevent pool exhaustion.
+    
+    This applies two layers of throttling:
+    1. Local semaphore: Limits concurrent GIS ops within this process
+    2. Distributed semaphore: Limits concurrent GIS ops across all processes (via Redis)
+    
+    Args:
+        provided_session: Optional pre-existing session. If provided, assumes
+                          caller handles throttling.
+        use_distributed_lock: Whether to use distributed (Redis) locking
+                              in addition to local semaphore.
+    """
+    if provided_session is not None:
+        # If session is provided, assume caller handles throttling
+        yield provided_session
+        return
+    
+    # Apply local semaphore (per-process limiting)
+    async with gis_operation_slot():
+        # Optionally apply distributed semaphore (cross-process limiting)
+        if use_distributed_lock:
+            async with distributed_gis_slot():
+                async with get_async_context_gis_db_with_retry() as session:
+                    yield session
+        else:
+            async with get_async_context_gis_db_with_retry() as session:
+                yield session
+
+
 async def fetch_variables_for_ids(ids: List[str], db_session: Optional[AsyncSession] = None):
     try:
         ids_int = tuple([int(item) for item in ids])
@@ -31,7 +68,7 @@ async def fetch_variables_for_ids(ids: List[str], db_session: Optional[AsyncSess
             """
         )
 
-        async with _get_session(db_session) as session:
+        async with _get_throttled_session(db_session) as session:
             result = await session.execute(statement, {"ids": ids_int})
             col_names = list(result.keys())
             rows = result.fetchall()
@@ -40,6 +77,7 @@ async def fetch_variables_for_ids(ids: List[str], db_session: Optional[AsyncSess
 
     except SQLAlchemyError as ex:
         logger.exception(ex)
+        raise
 
 
 async def fetch_rasters_for_regions(
@@ -81,7 +119,7 @@ async def fetch_rasters_for_regions(
             """
         )
 
-        async with _get_session(db_session) as session:
+        async with _get_throttled_session(db_session) as session:
             result = await session.execute(statement, {"crs": crs_int})
             rows = result.fetchall()
 
@@ -89,6 +127,7 @@ async def fetch_rasters_for_regions(
         return rows
     except SQLAlchemyError as ex:
         logger.exception(ex)
+        raise
 
 
 async def fetch_bio_carbon_for_regions(
@@ -129,7 +168,7 @@ async def fetch_bio_carbon_for_regions(
             """
         )
 
-        async with _get_session(db_session) as session:
+        async with _get_throttled_session(db_session) as session:
             result = await session.execute(statement, {"crs": crs_int})
             rows = result.fetchall()
 
@@ -137,6 +176,7 @@ async def fetch_bio_carbon_for_regions(
 
     except SQLAlchemyError as ex:
         logger.exception(ex)
+        raise
 
 
 async def fetch_ground_carbon_for_regions(
@@ -178,7 +218,7 @@ async def fetch_ground_carbon_for_regions(
             """
         )
 
-        async with _get_session(db_session) as session:
+        async with _get_throttled_session(db_session) as session:
             result = await session.execute(statement, {"crs": crs_int})
             rows = result.fetchall()
 
@@ -186,3 +226,4 @@ async def fetch_ground_carbon_for_regions(
 
     except SQLAlchemyError as ex:
         logger.exception(ex)
+        raise
