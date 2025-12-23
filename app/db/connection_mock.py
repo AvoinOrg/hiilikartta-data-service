@@ -4,10 +4,10 @@ stubbing the task queue during API tests.
 """
 
 import asyncio
-import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Tuple
+import os
 
 import pytest
 from alembic import command
@@ -25,11 +25,13 @@ from sqlalchemy.ext.asyncio import (
 from app import config as app_config
 from app.db import connection
 
-TEST_STATE_USER = os.getenv("STATE_PG_TEST_USER", "state_test_user")
-TEST_STATE_PASSWORD = os.getenv("STATE_PG_TEST_PASSWORD", "state_test_password")
-TEST_STATE_HOST = os.getenv("STATE_PG_TEST_HOST", "state-db-test")
-TEST_STATE_PORT = os.getenv("STATE_PG_TEST_PORT", "5432")
-TEST_STATE_DB = os.getenv("STATE_PG_TEST_DB", "state_test_db")
+_settings = app_config.get_settings()
+
+TEST_STATE_USER = _settings.state_pg_test_user
+TEST_STATE_PASSWORD = _settings.state_pg_test_password
+TEST_STATE_HOST = _settings.state_pg_test_host
+TEST_STATE_PORT = _settings.state_pg_test_port
+TEST_STATE_DB = _settings.state_pg_test_db
 
 TEST_STATE_DATABASE_URL = (
     f"postgresql+asyncpg://{TEST_STATE_USER}:{TEST_STATE_PASSWORD}@"
@@ -43,20 +45,27 @@ class InlineQueue:
         return {"function": function_name, "kwargs": kwargs}
 
 
+# Probably not necessary, but ensuring here that actual state DB env vars are not used
 def _configure_state_env() -> None:
     os.environ["STATE_PG_USER"] = TEST_STATE_USER
     os.environ["STATE_PG_PASSWORD"] = TEST_STATE_PASSWORD
     os.environ["STATE_PG_HOST"] = TEST_STATE_HOST
     os.environ["STATE_PG_PORT"] = str(TEST_STATE_PORT)
     os.environ["STATE_PG_DB"] = TEST_STATE_DB
+    _settings.state_pg_user = TEST_STATE_USER
+    _settings.state_pg_pass = TEST_STATE_PASSWORD
+    _settings.state_pg_host = TEST_STATE_HOST
+    _settings.state_pg_port = TEST_STATE_PORT
+    _settings.state_pg_database = TEST_STATE_DB
+    _settings.state_pg_url = TEST_STATE_DATABASE_URL
 
 
 def _build_test_state_engine() -> Tuple[AsyncEngine, async_sessionmaker[AsyncSession]]:
     pool_kwargs = {
-        "pool_size": int(os.getenv("DB_POOL_SIZE", "10")),
-        "max_overflow": int(os.getenv("DB_MAX_OVERFLOW", "0")),
-        "pool_timeout": int(os.getenv("DB_POOL_TIMEOUT", "30")),
-        "pool_recycle": int(os.getenv("DB_POOL_RECYCLE", "1800")),
+        "pool_size": _settings.db_pool_size,
+        "max_overflow": _settings.db_max_overflow,
+        "pool_timeout": _settings.db_pool_timeout,
+        "pool_recycle": _settings.db_pool_recycle,
         "pool_pre_ping": True,
     }
 
