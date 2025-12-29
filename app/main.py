@@ -39,6 +39,7 @@ from app.utils.data_loader import load_area_multipliers, load_bm_curves, unload_
 from app.saq_worker import queue
 from app.auth.validator import ZitadelIntrospectTokenValidator, ValidatorError
 from app.utils.analytics import track_calculation_initiated, track_calculation_new_plan
+from app.utils.debug import save_upload_for_debug
 
 logger = get_logger(__name__)
 
@@ -179,6 +180,8 @@ async def calculate(
     current_user: dict = Depends(get_current_user_optional),
     state_db_session: AsyncSession = Depends(get_async_state_db),
 ):
+    # save_upload_for_debug(file)  # Uncomment to save uploaded files for debugging
+
     try:
         ui_id: UUID = UUID(request.query_params.get("id"))
     except ValueError:
