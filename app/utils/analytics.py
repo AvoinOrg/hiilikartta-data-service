@@ -43,6 +43,7 @@ async def send_event(
     event_name: str,
     event_data: Optional[dict] = None,
     url: str = "/api/calculation",
+    user_agent: Optional[str] = None,
 ) -> bool:
     """
     Send a custom event to Umami analytics.
@@ -51,14 +52,20 @@ async def send_event(
         event_name: Name of the event (e.g., 'calculation_initiated', 'calculation_new_plan')
         event_data: Optional dictionary of additional event data
         url: The URL/page to associate with this event
+        user_agent: User agent string from the client (forwarded via X-User-Agent header)
     
     Returns:
         True if the event was sent successfully, False otherwise
     """
-    if not is_analytics_enabled():
-        return False
-    
     config = _get_analytics_config()
+    
+    if not is_analytics_enabled():
+        logger.info(
+            f"Analytics disabled - enabled: {config['enabled']}, "
+            f"host_url: {'set' if config['host_url'] else 'empty'}, "
+            f"website_id: {'set' if config['website_id'] else 'empty'}"
+        )
+        return False
     
     # Add timestamp for monthly tracking
     now = datetime.now(timezone.utc)
@@ -71,21 +78,28 @@ async def send_event(
     
     payload = {
         "website": config["website_id"],
-        "name": event_name,
+        "hostname": "hiilikartta.avoin.org",
         "url": url,
+        "name": event_name,
         "data": data,
     }
     
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": user_agent or "Hiilikartta-Data-Service/1.0",
+    }
+    
     try:
+        logger.info(f"Sending analytics event '{event_name}' to {config['host_url']}/api/send")
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.post(
                 f"{config['host_url']}/api/send",
                 json={"type": "event", "payload": payload},
-                headers={"Content-Type": "application/json"},
+                headers=headers,
             )
             
             if response.status_code == 200:
-                logger.debug(f"Analytics event '{event_name}' sent successfully")
+                logger.info(f"Analytics event '{event_name}' sent successfully")
                 return True
             else:
                 logger.warning(
@@ -101,21 +115,27 @@ async def send_event(
         return False
 
 
-async def track_calculation_initiated() -> bool:
+async def track_calculation_initiated(user_agent: Optional[str] = None) -> bool:
     """
     Track that a calculation was initiated.
     This is called for ALL calculations (new and re-calculations).
     
     Use this metric for: Total number of calculations initiated.
+    
+    Args:
+        user_agent: User agent string from the client
     """
-    return await send_event("calculation_initiated")
+    return await send_event("Calculation initiated", user_agent=user_agent)
 
 
-async def track_calculation_new_plan() -> bool:
+async def track_calculation_new_plan(user_agent: Optional[str] = None) -> bool:
     """
     Track that a calculation was initiated for a NEW plan.
     This is called only when creating a new plan, not for re-calculations.
     
     Use this metric for: Number of calculations for unique plans.
+    
+    Args:
+        user_agent: User agent string from the client
     """
-    return await send_event("calculation_new_plan")
+    return await send_event("Calculation initiated with a new zoning plan", user_agent=user_agent)

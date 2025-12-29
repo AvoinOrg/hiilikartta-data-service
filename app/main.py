@@ -237,9 +237,11 @@ async def calculate(
     await queue.enqueue("calculate_piece", ui_id=str(ui_id), retries=3, timeout=172800)
 
     # Track analytics events (non-blocking, errors are logged but don't affect response)
-    await track_calculation_initiated()  # Track all calculations
+    # Use forwarded User-Agent from frontend via X-User-Agent header
+    user_agent = request.headers.get("X-User-Agent")
+    await track_calculation_initiated(user_agent=user_agent)  # Track all calculations
     if is_new_plan:
-        await track_calculation_new_plan()  # Track only new plans
+        await track_calculation_new_plan(user_agent=user_agent)  # Track only new plans
 
     return {
         "status": CalculationStatus.PROCESSING.value,
