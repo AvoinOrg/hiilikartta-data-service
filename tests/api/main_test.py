@@ -13,14 +13,13 @@ from httpx import AsyncClient
 pytest_plugins = ["app.db.connection_mock"]
 
 from app.db import connection
-from app.db.connection_mock import install_inline_queue
 from app.db.plan import get_plan_by_ui_id
 from app.main import app, get_current_user
 from app.saq_worker import calculate_piece
 from app.types.general import CalculationStatus
 
 TEST_TIMEOUT_SECONDS = 60
-TEST_DATA_PATH = Path("tests/data/testarea1.zip")
+TEST_DATA_PATH = Path("tests/data/test-data-small-polygon.zip")
 TEST_USER = {"user_id": "test-user"}
 
 # Ranges will be filled in later; when left as None the test is skipped.
@@ -38,8 +37,6 @@ pytestmark = [
     pytest.mark.usefixtures("monkeypatch_get_async_context_db"),
 ]
 
-install_inline_queue()
-
 
 async def _fake_user():
     return TEST_USER
@@ -50,7 +47,9 @@ app.dependency_overrides[get_current_user] = _fake_user
 
 @pytest.fixture(scope="session")
 def event_loop():
-    loop = asyncio.get_event_loop_policy().new_event_loop()
+    policy = asyncio.get_event_loop_policy()
+    loop = policy.new_event_loop()
+    asyncio.set_event_loop(loop)
     yield loop
     loop.close()
 

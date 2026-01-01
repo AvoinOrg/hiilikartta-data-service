@@ -52,11 +52,11 @@ def _configure_state_env() -> None:
     os.environ["STATE_PG_HOST"] = TEST_STATE_HOST
     os.environ["STATE_PG_PORT"] = str(TEST_STATE_PORT)
     os.environ["STATE_PG_DB"] = TEST_STATE_DB
-    _settings.state_pg_user = TEST_STATE_USER
-    _settings.state_pg_pass = TEST_STATE_PASSWORD
-    _settings.state_pg_host = TEST_STATE_HOST
-    _settings.state_pg_port = TEST_STATE_PORT
-    _settings.state_pg_database = TEST_STATE_DB
+    # _settings.state_pg_user = TEST_STATE_USER
+    # _settings.state_pg_pass = TEST_STATE_PASSWORD
+    # _settings.state_pg_host = TEST_STATE_HOST
+    # _settings.state_pg_port = TEST_STATE_PORT
+    # _settings.state_pg_database = TEST_STATE_DB
     _settings.state_pg_url = TEST_STATE_DATABASE_URL
 
 
@@ -158,11 +158,12 @@ async def async_teardown():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def setup_and_teardown(request):
+def setup_and_teardown(request, event_loop):
     request.getfixturevalue("monkeypatch_get_async_context_db")
-    asyncio.run(async_setup())
+    install_inline_queue()
+    event_loop.run_until_complete(async_setup())
     yield
-    asyncio.run(async_teardown())
+    event_loop.run_until_complete(async_teardown())
 
 
 def install_inline_queue() -> InlineQueue:
