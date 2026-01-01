@@ -2,6 +2,7 @@ import asyncio
 import gzip
 import json
 import time
+from datetime import datetime as _real_datetime
 from pathlib import Path
 from typing import Optional
 from uuid import UUID, uuid4
@@ -9,6 +10,7 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
+from pytest import MonkeyPatch
 
 pytest_plugins = ["app.db.connection_mock"]
 
@@ -20,17 +22,13 @@ from app.types.general import CalculationStatus
 
 TEST_TIMEOUT_SECONDS = 60
 TEST_DATA_PATH = Path("tests/data/test-data-small-polygon.zip")
+EXPECTED_RESULTS_PATH = Path("tests/data/test-data-small-polygon-results.geojson")
 TEST_USER = {"user_id": "test-user"}
 
-# Ranges will be filled in later; when left as None the test is skipped.
-EXPECTED_TOTAL_RANGES = {
-    # "bio_carbon_total_nochange_2023": (1000, 2000),
-    # "ground_carbon_total_nochange_2023": (1000, 2000),
-}
-EXPECTED_AREA_RANGES = {
-    # "bio_carbon_total_nochange_2023": (100, 200),
-    # "ground_carbon_total_nochange_2023": (100, 200),
-}
+TEST_EXPECTED_CALCULATION_YEAR = 2025
+TEST_VALUE_MARGIN_RATIO = 0.15  # 15%
+SQM_TO_HA = 1 / 10_000
+_ZERO_ABS_TOL = 1e-9
 
 pytestmark = [
     pytest.mark.order(103),
@@ -60,8 +58,30 @@ async def async_client():
         yield client
 
 
+@pytest.fixture(scope="session", autouse=True)
+def freeze_calculator_year():
+    import app.calculator.calculator as calculator_module
+
+    class _FixedDatetime(_real_datetime):
+        @classmethod
+        def now(cls, tz=None):  # type: ignore[override]
+            return _real_datetime(TEST_EXPECTED_CALCULATION_YEAR, 1, 1, tzinfo=tz)
+
+        @classmethod
+        def utcnow(cls):  # type: ignore[override]
+            return _real_datetime(TEST_EXPECTED_CALCULATION_YEAR, 1, 1)
+
+    m = MonkeyPatch()
+    m.setattr(calculator_module, "datetime", _FixedDatetime)
+    yield
+    m.undo()
+
+
 def _decode_gzip_json(response):
-    return json.loads(gzip.decompress(response.content))
+    content = response.content
+    if content[:2] == b"\x1f\x8b":
+        content = gzip.decompress(content)
+    return json.loads(content)
 
 
 async def _post_testarea(
@@ -114,24 +134,88 @@ def _parse_geojson_field(raw_value):
     return raw_value
 
 
-def _assert_ranges(values, expected_ranges, scope_label):
-    if not expected_ranges:
-        pytest.skip(f"Add expected ranges for {scope_label}")
+def _feature_id(feature):
+    if "id" in feature and feature["id"] is not None:
+        return str(feature["id"])
+    props = feature.get("properties") or {}
+    if "id" in props and props["id"] is not None:
+        return str(props["id"])
+    return None
 
-    unset_ranges = [
-        key for key, bounds in expected_ranges.items() if None in (bounds or [])
-    ]
-    if unset_ranges:
-        pytest.skip(
-            f"Set expected ranges for {scope_label}: {', '.join(sorted(unset_ranges))}"
+
+def _flatten_expected_properties(properties):
+    flattened = {}
+    for key, value in properties.items():
+        if (
+            isinstance(value, dict)
+            and value
+            and all(isinstance(v, dict) for v in value.values())
+        ):
+            for scenario, by_year in value.items():
+                for year, numeric in by_year.items():
+                    flattened[f"{key}_{scenario}_{year}"] = numeric
+            continue
+        flattened[key] = value
+    return flattened
+
+
+def _load_expected_features():
+    expected_geojson = json.loads(EXPECTED_RESULTS_PATH.read_text())
+    features = expected_geojson.get("features") or []
+    assert features, f"No features found in {EXPECTED_RESULTS_PATH}"
+    return features
+
+
+def _assert_values_within_margin(actual_properties, expected_properties, *, scope_label):
+    for key, expected in expected_properties.items():
+        assert key in actual_properties, f"{scope_label}: missing key {key}"
+        actual = actual_properties[key]
+
+        if isinstance(expected, (int, float)) and not isinstance(expected, bool):
+            assert isinstance(actual, (int, float)) and not isinstance(actual, bool), (
+                f"{scope_label}: {key} expected a number, got {type(actual).__name__}"
+            )
+            expected_float = float(expected)
+            actual_float = float(actual)
+
+            if expected_float == 0:
+                lower, upper = -_ZERO_ABS_TOL, _ZERO_ABS_TOL
+            else:
+                tolerance = abs(expected_float) * TEST_VALUE_MARGIN_RATIO
+                lower, upper = expected_float - tolerance, expected_float + tolerance
+                if lower > upper:
+                    lower, upper = upper, lower
+
+            assert lower <= actual_float <= upper, (
+                f"{scope_label}: {key}={actual_float} outside expected range "
+                f"[{lower}, {upper}] for expected={expected_float}"
+            )
+            continue
+
+        assert actual == expected, (
+            f"{scope_label}: {key}={actual!r} does not match expected={expected!r}"
         )
 
-    for key, (lower, upper) in expected_ranges.items():
-        assert key in values, f"{key} missing from {scope_label}"
-        assert lower <= values[key] <= upper, (
-            f"{scope_label} value for {key} "
-            f"({values[key]}) outside expected range ({lower}, {upper})"
-        )
+
+def _aggregate_expected_totals(expected_flat_properties_by_feature):
+    area_sum = sum(float(props["area"]) for props in expected_flat_properties_by_feature)
+    aggregated = {"area": area_sum}
+
+    for props in expected_flat_properties_by_feature:
+        for key, value in props.items():
+            if (
+                isinstance(value, (int, float))
+                and not isinstance(value, bool)
+                and "_total_" in key
+            ):
+                aggregated[key] = aggregated.get(key, 0.0) + float(value)
+
+    for key, value in list(aggregated.items()):
+        if key == "area" or "_total_" not in key:
+            continue
+        aggregated[key.replace("_total_", "_ha_")] = value / (area_sum * SQM_TO_HA)
+
+    return aggregated
 
 
 @pytest.mark.asyncio
@@ -162,12 +246,37 @@ async def test_calculation_values_match_ranges(async_client):
 
     totals_geojson = _parse_geojson_field(payload["data"]["totals"])
     totals_properties = totals_geojson["features"][0]["properties"]
-    _assert_ranges(totals_properties, EXPECTED_TOTAL_RANGES, "totals")
 
     areas_geojson = _parse_geojson_field(payload["data"]["areas"])
-    area_properties = [feature["properties"] for feature in areas_geojson["features"]]
-    if area_properties:
-        _assert_ranges(area_properties[0], EXPECTED_AREA_RANGES, "areas")
+    area_features = areas_geojson.get("features") or []
+    assert area_features, "No features found in calculation areas output"
+
+    expected_features = _load_expected_features()
+    expected_flat_by_id = {}
+    expected_flat_list = []
+    for index, feature in enumerate(expected_features):
+        feature_key = _feature_id(feature) or str(index)
+        flattened = _flatten_expected_properties(feature.get("properties") or {})
+        expected_flat_by_id[feature_key] = flattened
+        expected_flat_list.append(flattened)
+
+    actual_by_id = {}
+    for index, feature in enumerate(area_features):
+        feature_key = _feature_id(feature) or str(index)
+        actual_by_id[feature_key] = feature.get("properties") or {}
+
+    assert len(actual_by_id) == len(expected_flat_by_id), (
+        f"Expected {len(expected_flat_by_id)} area features, got {len(actual_by_id)}"
+    )
+
+    for feature_key, expected_props in expected_flat_by_id.items():
+        assert feature_key in actual_by_id, f"Missing area feature {feature_key}"
+        _assert_values_within_margin(
+            actual_by_id[feature_key], expected_props, scope_label=f"areas[{feature_key}]"
+        )
+
+    expected_totals = _aggregate_expected_totals(expected_flat_list)
+    _assert_values_within_margin(totals_properties, expected_totals, scope_label="totals")
 
 
 @pytest.mark.asyncio
