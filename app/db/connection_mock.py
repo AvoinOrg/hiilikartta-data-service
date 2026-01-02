@@ -40,9 +40,14 @@ TEST_STATE_DATABASE_URL = (
 
 
 class InlineQueue:
+    def __init__(self) -> None:
+        self.enqueued: list[Dict[str, Any]] = []
+
     async def enqueue(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
         function_name = args[0] if args else kwargs.get("function")
-        return {"function": function_name, "kwargs": kwargs}
+        record = {"function": function_name, "kwargs": kwargs}
+        self.enqueued.append(record)
+        return record
 
 
 # Probably not necessary, but ensuring here that actual state DB env vars are not used

@@ -52,7 +52,17 @@ async def gis_operation_slot(timeout: Optional[float] = None):
     """
     semaphore = get_gis_semaphore()
     
-    if timeout is not None:
+    if timeout is not None and timeout <= 0:
+        # Fail-fast path: avoid awaiting, so we don't occupy a worker slot while waiting.
+        # asyncio.Semaphore has no public try_acquire; `_value` is safe to read/write
+        # atomically within the event loop.
+        current_value = getattr(semaphore, "_value", 0)
+        if current_value <= 0:
+            logger.debug("No GIS local operation slot available (fail-fast)")
+            raise asyncio.TimeoutError()
+
+        semaphore._value = current_value - 1  # type: ignore[attr-defined]
+    elif timeout is not None:
         try:
             await asyncio.wait_for(semaphore.acquire(), timeout=timeout)
         except asyncio.TimeoutError:

@@ -10,11 +10,13 @@ import asyncio
 import time
 import uuid
 from contextlib import asynccontextmanager
+from contextlib import suppress
 from typing import Optional
 
 import redis.asyncio as aioredis
 
 from app import config
+from app.db.errors import GisRetryLaterError
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -30,7 +32,28 @@ class RedisDistributedSemaphore:
     - Members are unique tokens identifying each slot holder
     - Scores are expiration timestamps (for automatic cleanup of stuck slots)
     """
-    
+
+    _ACQUIRE_SCRIPT = """
+    local key = KEYS[1]
+    local max_concurrent = tonumber(ARGV[1])
+    local token = ARGV[2]
+    local expire_at = tonumber(ARGV[3])
+    local now = tonumber(ARGV[4])
+
+    redis.call('ZREMRANGEBYSCORE', key, '-inf', now)
+    local current_count = redis.call('ZCARD', key)
+    if current_count >= max_concurrent then
+        return {0, current_count}
+    end
+
+    local added = redis.call('ZADD', key, 'NX', expire_at, token)
+    if added == 1 then
+        return {1, current_count + 1}
+    end
+
+    return {0, current_count}
+    """
+
     def __init__(
         self,
         redis_url: str,
@@ -64,7 +87,57 @@ class RedisDistributedSemaphore:
     def _key(self) -> str:
         """Redis key for the semaphore's sorted set."""
         return f"gis_semaphore:{self.name}"
-    
+
+    async def try_acquire(self) -> tuple[Optional[str], int]:
+        """
+        Attempt to acquire a slot once.
+
+        Returns:
+            A tuple of (token, current_count). token is None if not acquired.
+        """
+        redis = await self._get_redis()
+        token = str(uuid.uuid4())
+        now = time.time()
+        expire_at = now + self.slot_ttl
+
+        try:
+            result = await redis.eval(
+                self._ACQUIRE_SCRIPT,
+                1,
+                self._key,
+                self.max_concurrent,
+                token,
+                expire_at,
+                now,
+            )
+        except Exception:
+            logger.exception("Failed to acquire distributed GIS slot (Redis error)")
+            raise
+
+        acquired = bool(result and int(result[0]) == 1)
+        current_count = int(result[1]) if result and len(result) > 1 else 0
+
+        if acquired:
+            logger.debug(
+                f"Acquired distributed GIS slot: {token[:8]}... "
+                f"({current_count}/{self.max_concurrent} slots in use)"
+            )
+            return token, current_count
+
+        return None, current_count
+
+    async def _refresh_lease_loop(self, token: str, interval_seconds: float) -> None:
+        redis = await self._get_redis()
+        try:
+            while True:
+                await asyncio.sleep(interval_seconds)
+                expire_at = time.time() + self.slot_ttl
+                await redis.zadd(self._key, {token: expire_at}, xx=True)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Distributed GIS slot lease refresh failed")
+
     async def acquire(self, timeout: Optional[float] = None) -> str:
         """
         Acquire a slot. Returns a token that must be used to release.
@@ -78,34 +151,14 @@ class RedisDistributedSemaphore:
         Raises:
             asyncio.TimeoutError: If timeout exceeded.
         """
-        redis = await self._get_redis()
-        token = str(uuid.uuid4())
         start_time = time.monotonic()
         retry_delay = 0.5  # Start with 500ms delay
         max_retry_delay = 5.0  # Cap at 5 seconds
         
         while True:
-            # Clean up expired slots first
-            now = time.time()
-            await redis.zremrangebyscore(self._key, "-inf", now)
-            
-            # Check current count
-            current_count = await redis.zcard(self._key)
-            
-            if current_count < self.max_concurrent:
-                # Try to add our slot atomically
-                expire_at = now + self.slot_ttl
-                added = await redis.zadd(
-                    self._key,
-                    {token: expire_at},
-                    nx=True,  # Only add if doesn't exist
-                )
-                if added:
-                    logger.debug(
-                        f"Acquired distributed GIS slot: {token[:8]}... "
-                        f"({current_count + 1}/{self.max_concurrent} slots in use)"
-                    )
-                    return token
+            token, current_count = await self.try_acquire()
+            if token is not None:
+                return token
             
             # Check timeout
             if timeout is not None:
@@ -190,28 +243,36 @@ def get_gis_distributed_semaphore() -> RedisDistributedSemaphore:
 
 
 @asynccontextmanager
-async def distributed_gis_slot(timeout: Optional[float] = None):
+async def distributed_gis_slot(retry_in_seconds: float = 60.0):
     """
     Acquire a distributed slot for a GIS operation.
     Coordinates across all containers/processes using Redis.
     
     Args:
-        timeout: Maximum time to wait for a slot in seconds.
-                 Defaults to gis_operation_timeout config setting (1 hour).
+        retry_in_seconds: How long the worker should wait before retrying
+                          when no slot is available.
     
     Usage:
         async with distributed_gis_slot():
             # Your GIS operation here
             result = await fetch_rasters_for_regions(...)
     """
-    if timeout is None:
-        timeout = global_settings.gis_operation_timeout
-    
     semaphore = get_gis_distributed_semaphore()
-    token = await semaphore.acquire(timeout=timeout)
+    token, _ = await semaphore.try_acquire()
+    if token is None:
+        raise GisRetryLaterError(
+            "No distributed GIS semaphore slots available",
+            retry_in_seconds=retry_in_seconds,
+        )
+
+    heartbeat_interval = min(60.0, max(1.0, semaphore.slot_ttl / 3))
+    lease_task = asyncio.create_task(semaphore._refresh_lease_loop(token, heartbeat_interval))
     try:
         yield
     finally:
+        lease_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await lease_task
         await semaphore.release(token)
 
 

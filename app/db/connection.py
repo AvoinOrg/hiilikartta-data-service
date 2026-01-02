@@ -5,10 +5,17 @@ from typing import Callable
 from contextlib import asynccontextmanager
 
 from fastapi.encoders import jsonable_encoder
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app import config
+from app.db.errors import (
+    GisOperationTimedOutError,
+    GisRetryLaterError,
+    is_db_capacity_error,
+    is_statement_timeout,
+)
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -112,30 +119,17 @@ async def base_async_db_context_with_retry(
                     await session.rollback()
                 except Exception:
                     pass  # Ignore rollback errors
-            
-            error_msg = str(e).lower()
-            
-            # Check if this is a pool exhaustion or connection error worth retrying
-            is_retryable = any(phrase in error_msg for phrase in [
-                "timeout",
-                "connection",
-                "pool",
-                "too many clients",
-                "remaining connection slots",
-                "could not connect",
-                "connection refused",
-                "server closed the connection",
-            ])
-            
-            if not is_retryable or attempt == max_retries - 1:
-                raise
-            
-            delay = min(base_delay * (2 ** attempt), max_delay)
-            logger.warning(
-                f"Database connection failed (attempt {attempt + 1}/{max_retries}), "
-                f"retrying in {delay:.1f}s: {e}"
-            )
-            await asyncio.sleep(delay)
+
+            if is_statement_timeout(e):
+                raise GisOperationTimedOutError(str(e)) from e
+
+            if is_db_capacity_error(e):
+                raise GisRetryLaterError(
+                    "GIS database is at capacity; retry later",
+                    retry_in_seconds=max_delay,
+                ) from e
+
+            raise
             
         except HTTPException as http_ex:
             if session is not None:
@@ -204,4 +198,8 @@ async def get_async_context_gis_db_with_retry(
         max_retries=max_retries,
         base_delay=base_delay,
     ) as session:
+        timeout_seconds = max(0, int(global_settings.gis_statement_timeout_seconds))
+        if timeout_seconds:
+            timeout_ms = timeout_seconds * 1000
+            await session.execute(text(f"SET LOCAL statement_timeout = {timeout_ms}"))
         yield session

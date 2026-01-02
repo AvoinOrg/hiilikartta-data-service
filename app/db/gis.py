@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, List, Optional
 
@@ -6,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import text
 
 from app.db.connection import get_async_context_gis_db, get_async_context_gis_db_with_retry
+from app.db.errors import GisRetryLaterError
 from app.db.gis_semaphore import gis_operation_slot
 from app.db.redis_semaphore import distributed_gis_slot
 from app.utils.logger import get_logger
@@ -46,15 +48,21 @@ async def _get_throttled_session(
         return
     
     # Apply local semaphore (per-process limiting)
-    async with gis_operation_slot():
-        # Optionally apply distributed semaphore (cross-process limiting)
-        if use_distributed_lock:
-            async with distributed_gis_slot():
+    try:
+        async with gis_operation_slot(timeout=0):
+            # Optionally apply distributed semaphore (cross-process limiting)
+            if use_distributed_lock:
+                async with distributed_gis_slot():
+                    async with get_async_context_gis_db_with_retry() as session:
+                        yield session
+            else:
                 async with get_async_context_gis_db_with_retry() as session:
                     yield session
-        else:
-            async with get_async_context_gis_db_with_retry() as session:
-                yield session
+    except asyncio.TimeoutError as exc:
+        raise GisRetryLaterError(
+            "No local GIS semaphore slots available",
+            retry_in_seconds=60.0,
+        ) from exc
 
 
 async def fetch_variables_for_ids(ids: List[str], db_session: Optional[AsyncSession] = None):

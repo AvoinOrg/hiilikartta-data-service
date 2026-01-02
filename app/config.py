@@ -77,6 +77,12 @@ class Settings(BaseSettings):
     gis_distributed_max_concurrent: int = int(env_vars.get("GIS_DISTRIBUTED_MAX_CONCURRENT", "5"))
     gis_slot_ttl: int = int(env_vars.get("GIS_SLOT_TTL", "7200"))  # 2 hours default
     gis_operation_timeout: float = float(env_vars.get("GIS_OPERATION_TIMEOUT", "3600"))  # 1 hour default
+    gis_statement_timeout_seconds: int = int(
+        env_vars.get(
+            "GIS_STATEMENT_TIMEOUT_SECONDS",
+            env_vars.get("GIS_SLOT_TTL", "7200"),
+        )
+    )
 
     # Test database settings (optional, for testing)
     state_pg_test_user: str = env_vars.get("STATE_PG_TEST_USER", "state_test_user")

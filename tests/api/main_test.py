@@ -4,7 +4,7 @@ import json
 import time
 from datetime import datetime as _real_datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -317,3 +317,77 @@ async def test_deleting_plan_succeeds(async_client):
 
     async with connection.get_async_context_state_db() as session:
         assert await get_plan_by_ui_id(session, plan_id) is None
+
+
+@pytest.mark.asyncio
+async def test_calculate_piece_requeues_on_capacity(async_client, monkeypatch):
+    plan_id, _, _, response = await _post_testarea(async_client)
+    assert response.status_code == 200
+
+    from app import saq_worker
+    from app.calculator.calculator import CarbonCalculator
+    from app.db.connection_mock import InlineQueue
+    from app.db.errors import GisRetryLaterError
+
+    async def fake_calculate(self):  # type: ignore[no-untyped-def]
+        raise GisRetryLaterError("GIS at capacity", retry_in_seconds=12.0)
+
+    monkeypatch.setattr(CarbonCalculator, "calculate", fake_calculate)
+    queue_stub = cast(InlineQueue, saq_worker.queue)
+    queue_stub.enqueued.clear()
+
+    start = time.time()
+    await calculate_piece({}, ui_id=str(plan_id))
+
+    assert queue_stub.enqueued, "Expected calculate_piece to be re-enqueued"
+    call = queue_stub.enqueued[-1]
+    assert call["function"] == "calculate_piece"
+    kwargs = call["kwargs"]
+    assert kwargs["ui_id"] == str(plan_id)
+    assert kwargs["retries"] == 0
+    assert "scheduled" in kwargs
+    assert start + 11.0 <= kwargs["scheduled"] <= start + 14.0
+
+    async with connection.get_async_context_state_db() as session:
+        plan = await get_plan_by_ui_id(session, plan_id)
+
+    assert plan is not None
+    assert plan.last_index == -1
+    assert plan.last_area_calculation_retries == 0
+    assert plan.last_area_calculation_status.value == CalculationStatus.PROCESSING.value
+
+
+@pytest.mark.asyncio
+async def test_calculate_piece_skips_only_timed_out_feature(async_client, monkeypatch):
+    plan_id, _, _, response = await _post_testarea(async_client)
+    assert response.status_code == 200
+
+    from app import saq_worker
+    from app.calculator.calculator import CarbonCalculator
+    from app.db.connection_mock import InlineQueue
+    from app.db.errors import GisOperationTimedOutError
+
+    async def fake_calculate(self):  # type: ignore[no-untyped-def]
+        raise GisOperationTimedOutError("statement timeout")
+
+    monkeypatch.setattr(CarbonCalculator, "calculate", fake_calculate)
+    queue_stub = cast(InlineQueue, saq_worker.queue)
+    queue_stub.enqueued.clear()
+
+    await calculate_piece({}, ui_id=str(plan_id))
+
+    assert queue_stub.enqueued, "Expected calculate_piece to be re-enqueued"
+    call = queue_stub.enqueued[-1]
+    assert call["function"] == "calculate_piece"
+    kwargs = call["kwargs"]
+    assert kwargs["ui_id"] == str(plan_id)
+    assert "scheduled" not in kwargs
+
+    async with connection.get_async_context_state_db() as session:
+        plan = await get_plan_by_ui_id(session, plan_id)
+
+    assert plan is not None
+    assert plan.calculation_status.value == CalculationStatus.PROCESSING.value
+    assert plan.last_area_calculation_status.value == CalculationStatus.ERROR.value
+    assert plan.last_area_calculation_retries == 0
+    assert plan.last_index == 0

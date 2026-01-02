@@ -9,6 +9,7 @@ import traceback
 from app.calculator.calculator import CarbonCalculator
 from app.types.general import CalculationStatus
 from app.db.connection import get_async_context_state_db
+from app.db.errors import GisOperationTimedOutError, GisRetryLaterError
 from app.db.plan import (
     add_feature_collection_to_plan_areas,
     get_feature_from_plan_by_ui_id_and_index,
@@ -25,6 +26,8 @@ logger = get_logger(__name__)
 global_settings = config.get_settings()
 
 MAX_CALC_RETRIES = 2
+JOB_TIMEOUT_SECONDS = 172800
+CAPACITY_RETRY_SECONDS = 60.0
 
 
 # class CalculationResult(TypedDict):
@@ -40,19 +43,32 @@ async def calculate(ctx, *, ui_id: str):
 
     calc_data = None
     if plan:
-        cc = CarbonCalculator(plan.data)
-        calc_data = await cc.calculate()
+        try:
+            cc = CarbonCalculator(plan.data)
+            calc_data = await cc.calculate()
+        except GisRetryLaterError as exc:
+            await queue.enqueue(
+                "calculate",
+                ui_id=str(ui_id),
+                scheduled=time.time() + exc.retry_in_seconds,
+                retries=0,
+                timeout=JOB_TIMEOUT_SECONDS,
+            )
+            return
+        except GisOperationTimedOutError as exc:
+            logger.error(f"GIS operation timed out for ui_id={ui_id}: {exc}")
+            async with get_async_context_state_db() as state_db_session:
+                plan = await get_plan_by_ui_id(state_db_session, UUID(ui_id))
+                if plan:
+                    plan.calculation_status = CalculationStatus.ERROR.value
+                    await update_plan(state_db_session, plan)
+            return
 
         async with get_async_context_state_db() as state_db_session:
             plan = await get_plan_by_ui_id(state_db_session, UUID(ui_id))
             if calc_data == None:
                 plan.calculation_status = CalculationStatus.ERROR.value
-                await update_plan(
-                    state_db_session,
-                    plan,
-                    CalculationStatus.ERROR.value,
-                    {"message": "No data found for polygons."},
-                )
+                await update_plan(state_db_session, plan)
             else:
                 plan.report_areas = calc_data["areas"]
                 plan.report_totals = calc_data["totals"]
@@ -65,186 +81,132 @@ async def calculate(ctx, *, ui_id: str):
 
 
 async def calculate_piece(ctx, *, ui_id: str):
+    async def _enqueue_next(*, delay_seconds: float = 0.0) -> None:
+        kwargs = {"ui_id": str(ui_id), "retries": 0, "timeout": JOB_TIMEOUT_SECONDS}
+        if delay_seconds > 0:
+            kwargs["scheduled"] = time.time() + delay_seconds
+        await queue.enqueue("calculate_piece", **kwargs)
+
     plan = None
     feature = None
-    totals = None
 
-    try:
-        async with get_async_context_state_db() as state_db_session:
-            plan = await get_plan_without_data_by_ui_id(state_db_session, UUID(ui_id))
+    async with get_async_context_state_db() as state_db_session:
+        plan = await get_plan_without_data_by_ui_id(state_db_session, UUID(ui_id))
+        if not plan:
+            logger.error(f"Plan not found or is invalid: ui_id={ui_id}")
+            return
 
-            if not plan:
-                raise ValueError("Plan not found or is invalid.")
-            if plan:
-                if plan.last_index + 1 >= plan.total_indices:
-                    plan_report = await get_plan_with_report_areas_by_ui_id(
-                        state_db_session, UUID(ui_id)
-                    )
-                    if plan_report:
-                        try:
-                            cc = CarbonCalculator(
-                                plan_report.report_areas, sort_col="none"
-                            )
-                            calc_data = await cc.calculate_totals()
-
-                            if calc_data:
-                                plan.calculation_status = (
-                                    CalculationStatus.FINISHED.value
-                                )
-                                plan.report_totals = calc_data["totals"]
-                                plan.calculated_ts = calc_data["metadata"].get(
-                                    "timestamp"
-                                )
-                                await update_plan(
-                                    state_db_session,
-                                    plan,
-                                )
-                        except Exception as e:
-                            if plan.last_area_calculation_retries > MAX_CALC_RETRIES:
-                                plan.calculation_status = CalculationStatus.ERROR.value
-                                await update_plan(
-                                    state_db_session,
-                                    plan,
-                                )
-                            else:
-                                plan.last_area_calculation_retries += 1
-                                await update_plan(
-                                    state_db_session,
-                                    plan,
-                                )
-
-                    else:
-                        plan.calculation_status = CalculationStatus.ERROR.value
-                        await update_plan(
-                            state_db_session,
-                            plan,
-                        )
+        while True:
+            if plan.last_index + 1 >= plan.total_indices:
+                plan_report = await get_plan_with_report_areas_by_ui_id(
+                    state_db_session, UUID(ui_id)
+                )
+                if not plan_report:
+                    plan.calculation_status = CalculationStatus.ERROR.value
+                    await update_plan(state_db_session, plan)
                     return
-                
-
-                if plan.last_area_calculation_retries > MAX_CALC_RETRIES:
-                    plan.last_area_calculation_retries = 0
-                    plan.last_index = plan.last_index + 1
-                    await update_plan(
-                        state_db_session,
-                        plan,
-                    )
-
-                else:
-                    feature = await get_feature_from_plan_by_ui_id_and_index(
-                        state_db_session, UUID(ui_id), plan.last_index + 1
-                    )
-
-                    if feature:
-                        plan.last_area_calculation_status = (
-                            CalculationStatus.PROCESSING.value
-                        )
-                        plan.last_area_calculation_retries = (
-                            plan.last_area_calculation_retries + 1
-                        )
-
-                        await update_plan(
-                            state_db_session,
-                            plan,
-                        )
-
-            if feature:
-                calc_data = None
 
                 try:
-                    cc = CarbonCalculator(
-                        {"type": "FeatureCollection", "features": [feature]},
-                    )
-                    calc_data = await cc.calculate()
+                    cc = CarbonCalculator(plan_report.report_areas, sort_col="none")
+                    calc_data = await cc.calculate_totals()
+                except Exception as exc:
+                    plan.last_area_calculation_retries += 1
+                    if plan.last_area_calculation_retries > MAX_CALC_RETRIES:
+                        plan.calculation_status = CalculationStatus.ERROR.value
+                        await update_plan(state_db_session, plan)
+                        return
+                    await update_plan(state_db_session, plan)
+                    await _enqueue_next(delay_seconds=CAPACITY_RETRY_SECONDS)
+                    return
 
-                    async with get_async_context_state_db() as state_db_session:
-                        plan = await get_plan_without_data_by_ui_id(
-                            state_db_session, UUID(ui_id)
-                        )
+                if not calc_data:
+                    plan.calculation_status = CalculationStatus.ERROR.value
+                    await update_plan(state_db_session, plan)
+                    return
 
-                        if plan is None:
-                            raise ValueError("Plan not found during update.")
+                plan.calculation_status = CalculationStatus.FINISHED.value
+                plan.report_totals = calc_data["totals"]
+                plan.calculated_ts = calc_data["metadata"].get("timestamp")
+                await update_plan(state_db_session, plan)
+                return
 
-                        if calc_data is None:
-                            raise ValueError("No data returned by calculator")
-                        else:
-                            await add_feature_collection_to_plan_areas(
-                                state_db_session, plan.id, calc_data["areas"]
-                            )
+            if plan.last_area_calculation_retries > MAX_CALC_RETRIES:
+                plan.last_area_calculation_retries = 0
+                plan.last_area_calculation_status = CalculationStatus.ERROR.value
+                plan.last_index = plan.last_index + 1
+                await update_plan(state_db_session, plan)
+                continue
 
-                            plan.last_area_calculation_status = (
-                                CalculationStatus.FINISHED.value
-                            )
-                            plan.calculation_updated_ts = calc_data["metadata"].get(
-                                "timestamp"
-                            )
-                            plan.last_index = plan.last_index + 1
-                            plan.last_area_calculation_retries = 0
-                            
-                            await update_plan(
-                                state_db_session,
-                                plan,
-                            )
-                except Exception as e:
-                    tb_str = traceback.format_exception(
-                        etype=type(e), value=e, tb=e.__traceback__
-                    )
-                    traceback_str = "".join(tb_str)
+            feature = await get_feature_from_plan_by_ui_id_and_index(
+                state_db_session, UUID(ui_id), plan.last_index + 1
+            )
+            if not feature:
+                plan.last_area_calculation_retries = 0
+                plan.last_area_calculation_status = CalculationStatus.ERROR.value
+                plan.last_index = plan.last_index + 1
+                await update_plan(state_db_session, plan)
+                continue
 
-                    logger.error(
-                        f"Error calculating plan with ui_id: {plan.ui_id} on feature: {feature}\n{traceback_str}"
-                    )
+            plan.last_area_calculation_status = CalculationStatus.PROCESSING.value
+            await update_plan(state_db_session, plan)
+            break
 
-                    async with get_async_context_state_db() as state_db_session:
-                        plan = await get_plan_without_data_by_ui_id(
-                            state_db_session, UUID(ui_id)
-                        )
-                        if plan.last_area_calculation_retries > MAX_CALC_RETRIES:
-                            plan.last_area_calculation_retries = 0
-                            plan.last_index = plan.last_index + 1
-
-                        elif feature:
-                            plan.last_area_calculation_status = (
-                                CalculationStatus.PROCESSING.value
-                            )
-                            plan.last_area_calculation_retries = (
-                                plan.last_area_calculation_retries + 1
-                            )
-
-                        await update_plan(
-                            state_db_session,
-                            plan,
-                        )
-
-        await queue.enqueue(
-            "calculate_piece", ui_id=str(ui_id), retries=0, timeout=172800
-        )
-
+    try:
+        cc = CarbonCalculator({"type": "FeatureCollection", "features": [feature]})
+        calc_data = await cc.calculate()
+    except GisRetryLaterError as exc:
+        await _enqueue_next(delay_seconds=exc.retry_in_seconds)
+        return
+    except GisOperationTimedOutError as exc:
+        logger.error(f"GIS operation timed out; skipping feature for ui_id={ui_id}: {exc}")
+        async with get_async_context_state_db() as state_db_session:
+            plan = await get_plan_without_data_by_ui_id(state_db_session, UUID(ui_id))
+            if plan:
+                plan.last_area_calculation_retries = 0
+                plan.last_area_calculation_status = CalculationStatus.ERROR.value
+                plan.last_index = plan.last_index + 1
+                await update_plan(state_db_session, plan)
+        await _enqueue_next()
+        return
     except Exception as e:
-        logger.error(e)
+        tb_str = traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)
+        traceback_str = "".join(tb_str)
+        logger.error(
+            f"Error calculating plan with ui_id={ui_id} on feature: {feature}\n{traceback_str}"
+        )
 
         async with get_async_context_state_db() as state_db_session:
             plan = await get_plan_without_data_by_ui_id(state_db_session, UUID(ui_id))
+            if plan:
+                plan.last_area_calculation_retries += 1
+                if plan.last_area_calculation_retries > MAX_CALC_RETRIES:
+                    plan.last_area_calculation_retries = 0
+                    plan.last_area_calculation_status = CalculationStatus.ERROR.value
+                    plan.last_index = plan.last_index + 1
+                await update_plan(state_db_session, plan)
 
-            if plan.last_area_calculation_retries < MAX_CALC_RETRIES:
-                plan.last_area_calculation_retries = (
-                    plan.last_area_calculation_retries + 1
-                )
-                await update_plan(
-                    state_db_session,
-                    plan,
-                )
+        await _enqueue_next()
+        return
 
-                await queue.enqueue(
-                    "calculate_piece", ui_id=str(ui_id), retries=0, timeout=172800
-                )
-            else:
-                plan.last_area_calculation_status = CalculationStatus.ERROR.value
-                plan.last_index = plan.last_index + 1
-                await update_plan(
-                    state_db_session,
-                    plan,
-                )
+    if not calc_data:
+        await _enqueue_next()
+        return
+
+    async with get_async_context_state_db() as state_db_session:
+        plan = await get_plan_without_data_by_ui_id(state_db_session, UUID(ui_id))
+        if plan is None:
+            logger.error(f"Plan not found during update: ui_id={ui_id}")
+            await _enqueue_next()
+            return
+
+        await add_feature_collection_to_plan_areas(state_db_session, plan.id, calc_data["areas"])
+        plan.last_area_calculation_status = CalculationStatus.FINISHED.value
+        plan.calculation_updated_ts = calc_data["metadata"].get("timestamp")
+        plan.last_index = plan.last_index + 1
+        plan.last_area_calculation_retries = 0
+        await update_plan(state_db_session, plan)
+
+    await _enqueue_next()
 
 
 async def calculate_totals(ctx, *, ui_id: str):
