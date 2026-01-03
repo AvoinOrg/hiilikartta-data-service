@@ -62,13 +62,13 @@ class CarbonCalculator:
                 "Geometries are not valid, even after trying to fix them with buffer(0)"
             )
 
-        self.simplify_calcs = False
         # Simplify calculations for large areas
-        if zone.area.sum() > 50000:
+        if zone.area.sum() > 5000:
             self.simplify_calcs = True
 
-        if not self.simplify_calcs:
-            zone["buffered_geometry"] = zone.geometry.buffer(22.7)
+        self.simplify_calcs = False
+        # if not self.simplify_calcs:
+        #     zone["buffered_geometry"] = zone.geometry.buffer(16)
 
         self.zone: gpd.GeoDataFrame = zone
         self.zone_raster = None
@@ -97,7 +97,11 @@ class CarbonCalculator:
     async def get_rasts(
         self, wkt_list: List[str], crs: str
     ) -> List[xr.DataArray]:
-        rasts = await fetch_rasters_for_regions(wkt_list, crs)
+        rasts = await fetch_rasters_for_regions(
+            wkt_list,
+            crs,
+            simplify_calcs=self.simplify_calcs,
+        )
         sorted_rasts = sorted(rasts, key=lambda x: x[1])
 
         rast_das = []
@@ -106,7 +110,7 @@ class CarbonCalculator:
                 with tempfile.NamedTemporaryFile(
                     suffix=".tiff", delete=True
                 ) as tmpfile:
-                    await asyncio.to_thread(tmpfile.write, rast[0][0])
+                    await asyncio.to_thread(tmpfile.write, rast[0])
                     tmpfile.flush()
 
                     # Use rioxarray to directly open the temporary raster file
@@ -133,7 +137,11 @@ class CarbonCalculator:
     async def get_bio_carbon(
         self, wkts: List[str], crs: str
     ) -> List[xr.DataArray]:
-        rasts = await fetch_bio_carbon_for_regions(wkts, crs)
+        rasts = await fetch_bio_carbon_for_regions(
+            wkts,
+            crs,
+            simplify_calcs=self.simplify_calcs,
+        )
         sorted_rasts = sorted(rasts, key=lambda x: x[1])
 
         rast_das = []
@@ -142,7 +150,7 @@ class CarbonCalculator:
                 with tempfile.NamedTemporaryFile(
                     suffix=".tiff", delete=True
                 ) as tmpfile:
-                    await asyncio.to_thread(tmpfile.write, rast[0][0])
+                    await asyncio.to_thread(tmpfile.write, rast[0])
                     tmpfile.flush()
 
                     # Use rioxarray to directly open the temporary raster file
@@ -158,7 +166,11 @@ class CarbonCalculator:
     async def get_ground_carbon(
         self, wkts: List[str], crs: str
     ) -> List[xr.DataArray]:
-        rasts = await fetch_ground_carbon_for_regions(wkts, crs)
+        rasts = await fetch_ground_carbon_for_regions(
+            wkts,
+            crs,
+            simplify_calcs=self.simplify_calcs,
+        )
         sorted_rasts = sorted(rasts, key=lambda x: x[1])
 
         rast_das = []
@@ -167,7 +179,7 @@ class CarbonCalculator:
                 with tempfile.NamedTemporaryFile(
                     suffix=".tiff", delete=True
                 ) as tmpfile:
-                    await asyncio.to_thread(tmpfile.write, rast[0][0])
+                    await asyncio.to_thread(tmpfile.write, rast[0])
                     tmpfile.flush()
 
                     # Use rioxarray to directly open the temporary raster file
@@ -259,10 +271,10 @@ class CarbonCalculator:
             area_multipliers_ground.append(multiplier_ground)
 
         wkt_list = []
-        if self.simplify_calcs:
-            wkt_list = self.zone.geometry.to_wkt().tolist()
-        else:
-            wkt_list = self.zone.buffered_geometry.to_wkt().tolist()
+        wkt_list = self.zone.geometry.to_wkt().tolist()
+        # if self.simplify_calcs:
+        # else:
+        #     wkt_list = self.zone.buffered_geometry.to_wkt().tolist()
 
         rasts = await self.get_rasts(wkt_list=wkt_list, crs=crs)
 

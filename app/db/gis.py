@@ -6,7 +6,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import text
 
-from app.db.connection import get_async_context_gis_db, get_async_context_gis_db_with_retry
+from app.db.connection import (
+    get_async_context_gis_db,
+    get_async_context_gis_db_with_retry,
+)
 from app.db.errors import GisRetryLaterError
 from app.db.gis_semaphore import gis_operation_slot
 from app.db.redis_semaphore import distributed_gis_slot
@@ -16,7 +19,9 @@ logger = get_logger(__name__)
 
 
 @asynccontextmanager
-async def _get_session(provided_session: Optional[AsyncSession]) -> AsyncIterator[AsyncSession]:
+async def _get_session(
+    provided_session: Optional[AsyncSession],
+) -> AsyncIterator[AsyncSession]:
     if provided_session is not None:
         yield provided_session
     else:
@@ -31,11 +36,11 @@ async def _get_throttled_session(
 ) -> AsyncIterator[AsyncSession]:
     """
     Get a GIS session with throttling to prevent pool exhaustion.
-    
+
     This applies two layers of throttling:
     1. Local semaphore: Limits concurrent GIS ops within this process
     2. Distributed semaphore: Limits concurrent GIS ops across all processes (via Redis)
-    
+
     Args:
         provided_session: Optional pre-existing session. If provided, assumes
                           caller handles throttling.
@@ -46,7 +51,7 @@ async def _get_throttled_session(
         # If session is provided, assume caller handles throttling
         yield provided_session
         return
-    
+
     # Apply local semaphore (per-process limiting)
     try:
         async with gis_operation_slot(timeout=0):
@@ -65,7 +70,9 @@ async def _get_throttled_session(
         ) from exc
 
 
-async def fetch_variables_for_ids(ids: List[str], db_session: Optional[AsyncSession] = None):
+async def fetch_variables_for_ids(
+    ids: List[str], db_session: Optional[AsyncSession] = None
+):
     try:
         ids_int = tuple([int(item) for item in ids])
         statement = text(
@@ -88,8 +95,42 @@ async def fetch_variables_for_ids(ids: List[str], db_session: Optional[AsyncSess
         raise
 
 
+def _build_raster_union_clip_statement(table_name: str, wkt_list_str: str):
+    return text(
+        f"""
+        WITH input_geoms AS (
+            SELECT
+                idx as order_num,
+                ST_SetSRID(
+                    ST_GeomFromText(wkt),
+                    :crs
+                ) as geom
+            FROM unnest(array[{wkt_list_str}]) WITH ORDINALITY as indexed_wkt(wkt, idx)
+        ),
+        unioned AS (
+            SELECT
+                g.order_num,
+                ST_Union(r.rast) as union_rast
+            FROM {table_name} r
+            JOIN input_geoms g
+                ON ST_Intersects(r.rast, g.geom)
+            GROUP BY g.order_num
+        )
+        SELECT
+            ST_AsTIFF(ST_Clip(u.union_rast, g.geom, touched => :touched), 'DEFLATE9') as tiff,
+            g.order_num
+        FROM unioned u
+        JOIN input_geoms g USING (order_num)
+        ORDER BY g.order_num;
+        """
+    )
+
+
 async def fetch_rasters_for_regions(
-    wkts: List[str], crs: str, db_session: Optional[AsyncSession] = None
+    wkts: List[str],
+    crs: str,
+    db_session: Optional[AsyncSession] = None,
+    simplify_calcs: bool = False,
 ):
     crs_int = int(crs)
 
@@ -97,38 +138,19 @@ async def fetch_rasters_for_regions(
         # Prepare the WKT geometries as a string to use in the SQL query
         wkt_list_str = ",".join([f"('{wkt}')" for wkt in wkts])
 
-        statement = text(
-            f"""
-            WITH rasters AS (
-                SELECT 
-                    wkt,
-                    ST_Union(rast) as union_rast,
-                    ST_SetSRID(
-                        ST_GeomFromText(wkt), 
-                        :crs
-                    ) as geom,
-                    idx as order_num
-                FROM luke_mvmisegmentit_id_kokomaa,
-                    unnest(array[{wkt_list_str}]) WITH ORDINALITY as indexed_wkt(wkt, idx)
-                WHERE ST_Intersects(
-                    rast, 
-                    ST_SetSRID(
-                        ST_GeomFromText(wkt), 
-                        :crs
-                    )
-                )
-                GROUP BY wkt, idx
-            )
-            SELECT 
-                array_agg(ST_AsTIFF(ST_Clip(union_rast, geom), 'DEFLATE9')) as tiffs,
-                order_num
-            FROM rasters
-            GROUP BY wkt, order_num;
-            """
+        statement = _build_raster_union_clip_statement(
+            "luke_mvmisegmentit_id_kokomaa",
+            wkt_list_str,
         )
 
         async with _get_throttled_session(db_session) as session:
-            result = await session.execute(statement, {"crs": crs_int})
+            result = await session.execute(
+                statement,
+                {
+                    "crs": crs_int,
+                    "touched": not simplify_calcs,
+                },
+            )
             rows = result.fetchall()
 
         # Fetching all rows, each row containing a raster for a WKT geometry
@@ -139,45 +161,29 @@ async def fetch_rasters_for_regions(
 
 
 async def fetch_bio_carbon_for_regions(
-    wkts: List[str], crs: str, db_session: Optional[AsyncSession] = None
+    wkts: List[str],
+    crs: str,
+    db_session: Optional[AsyncSession] = None,
+    simplify_calcs: bool = False,
 ):
     crs_int = int(crs)
 
     try:
         wkt_list_str = ",".join([f"('{wkt}')" for wkt in wkts])
 
-        statement = text(
-            f"""
-            WITH rasters AS (
-                SELECT 
-                    wkt,
-                    ST_Union(rast) as union_rast,
-                    ST_SetSRID(
-                        ST_GeomFromText(wkt), 
-                        :crs
-                    ) as geom,
-                    idx as order_num
-                FROM hiilikartta_kasvillisuudenhiili_2021_tcha,
-                    unnest(array[{wkt_list_str}]) WITH ORDINALITY as indexed_wkt(wkt, idx)
-                WHERE ST_Intersects(
-                    rast,
-                    ST_SetSRID(
-                        ST_GeomFromText(wkt), 
-                        :crs
-                    )
-                )
-                GROUP BY wkt, idx
-            )
-            SELECT 
-                array_agg(ST_AsTIFF(ST_Clip(union_rast, geom), 'DEFLATE9')) as tiffs,
-                order_num
-            FROM rasters
-            GROUP BY wkt, order_num;
-            """
+        statement = _build_raster_union_clip_statement(
+            "hiilikartta_kasvillisuudenhiili_2021_tcha",
+            wkt_list_str,
         )
 
         async with _get_throttled_session(db_session) as session:
-            result = await session.execute(statement, {"crs": crs_int})
+            result = await session.execute(
+                statement,
+                {
+                    "crs": crs_int,
+                    "touched": not simplify_calcs,
+                },
+            )
             rows = result.fetchall()
 
         return rows
@@ -188,7 +194,10 @@ async def fetch_bio_carbon_for_regions(
 
 
 async def fetch_ground_carbon_for_regions(
-    wkts: List[str], crs: str, db_session: Optional[AsyncSession] = None
+    wkts: List[str],
+    crs: str,
+    db_session: Optional[AsyncSession] = None,
+    simplify_calcs: bool = False,
 ):
     crs_int = int(crs)
 
@@ -196,38 +205,19 @@ async def fetch_ground_carbon_for_regions(
         # Prepare the WKT geometries as a string to use in the SQL query
         wkt_list_str = ",".join([f"('{wkt}')" for wkt in wkts])
 
-        statement = text(
-            f"""
-            WITH rasters AS (
-                SELECT 
-                    wkt,
-                    ST_Union(rast) as union_rast,
-                    ST_SetSRID(
-                        ST_GeomFromText(wkt), 
-                        :crs
-                    ) as geom,
-                    idx as order_num
-                FROM hiilikartta_maaperanhiili_2023_tcha,
-                    unnest(array[{wkt_list_str}]) WITH ORDINALITY as indexed_wkt(wkt, idx)
-                WHERE ST_Intersects(
-                    rast, 
-                    ST_SetSRID(
-                        ST_GeomFromText(wkt), 
-                        :crs
-                    )
-                )
-                GROUP BY wkt, idx
-            )
-            SELECT 
-                array_agg(ST_AsTIFF(ST_Clip(union_rast, geom), 'DEFLATE9')) as tiffs,
-                order_num
-            FROM rasters
-            GROUP BY wkt, order_num;
-            """
+        statement = _build_raster_union_clip_statement(
+            "hiilikartta_maaperanhiili_2023_tcha",
+            wkt_list_str,
         )
 
         async with _get_throttled_session(db_session) as session:
-            result = await session.execute(statement, {"crs": crs_int})
+            result = await session.execute(
+                statement,
+                {
+                    "crs": crs_int,
+                    "touched": not simplify_calcs,
+                },
+            )
             rows = result.fetchall()
 
         return rows
