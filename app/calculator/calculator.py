@@ -278,15 +278,13 @@ class CarbonCalculator:
 
         rasts = await self.get_rasts(wkt_list=wkt_list, crs=crs)
 
-        i = 0
         rast_overlaps = []
-        for rast in rasts:
+        for idx, rast in enumerate(rasts):
             overlap_mask = get_overlap_mask(
-                rast, self.zone.iloc[i].geometry, self.simplify_calcs
+                rast, self.zone.iloc[idx].geometry, self.simplify_calcs
             )
-            rast = rast.where(overlap_mask != 0, np.nan)
+            rasts[idx] = rast.where(overlap_mask != 0, np.nan)
             rast_overlaps.append(overlap_mask)
-            i += 1
 
         uniq_vals = np.array([])
         for data_array in rasts:
