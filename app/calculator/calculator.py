@@ -1,21 +1,22 @@
-import asyncio
-import tempfile
+# import asyncio
+# import tempfile
 import pandas as pd
-import rioxarray as rxr
+# import rioxarray as rxr
 import geopandas as gpd
-import xarray as xr
-import numpy as np
+# import xarray as xr
+# import numpy as np
 from datetime import datetime
 from typing import Any, Dict, TypedDict, List
-import json
+# import json
 from warnings import simplefilter
 
-from app.calculator.utils import get_bm_curve_values_for_years_mabp, get_overlap_mask
 from app.db.gis import (
-    fetch_bio_carbon_for_regions,
-    fetch_ground_carbon_for_regions,
-    fetch_rasters_for_regions,
+    # fetch_bio_carbon_for_regions,
+    # fetch_ground_carbon_for_regions,
+    # fetch_rasters_for_regions,
+    fetch_segment_areas_ha_for_regions,
     fetch_variables_for_ids,
+    fetch_weighted_raster_sum_ha_for_regions,
 )
 from app.utils.data_loader import (
     get_bm_curve_df,
@@ -94,35 +95,36 @@ class CarbonCalculator:
 
     #     return zone
 
-    async def get_rasts(
-        self, wkt_list: List[str], crs: str
-    ) -> List[xr.DataArray]:
-        rasts = await fetch_rasters_for_regions(
-            wkt_list,
-            crs,
-            simplify_calcs=self.simplify_calcs,
-        )
-        sorted_rasts = sorted(rasts, key=lambda x: x[1])
-
-        rast_das = []
-        for rast in sorted_rasts:
-            try:
-                with tempfile.NamedTemporaryFile(
-                    suffix=".tiff", delete=True
-                ) as tmpfile:
-                    await asyncio.to_thread(tmpfile.write, rast[0])
-                    tmpfile.flush()
-
-                    # Use rioxarray to directly open the temporary raster file
-                    rast_da: xr.DataArray = rxr.open_rasterio(
-                        tmpfile.name, masked=True
-                    ).isel(band=0)
-
-                    rast_das.append(rast_da)
-            except Exception as e:
-                print(e)
-
-        return rast_das
+    # Unused: legacy codepath for fetching full rasters and processing client-side.
+    # async def get_rasts(
+    #     self, wkt_list: List[str], crs: str
+    # ) -> List[xr.DataArray]:
+    #     rasts = await fetch_rasters_for_regions(
+    #         wkt_list,
+    #         crs,
+    #         simplify_calcs=self.simplify_calcs,
+    #     )
+    #     sorted_rasts = sorted(rasts, key=lambda x: x[1])
+    #
+    #     rast_das = []
+    #     for rast in sorted_rasts:
+    #         try:
+    #             with tempfile.NamedTemporaryFile(
+    #                 suffix=".tiff", delete=True
+    #             ) as tmpfile:
+    #                 await asyncio.to_thread(tmpfile.write, rast[0])
+    #                 tmpfile.flush()
+    #
+    #                 # Use rioxarray to directly open the temporary raster file
+    #                 rast_da: xr.DataArray = rxr.open_rasterio(
+    #                     tmpfile.name, masked=True
+    #                 ).isel(band=0)
+    #
+    #                 rast_das.append(rast_da)
+    #         except Exception as e:
+    #             print(e)
+    #
+    #     return rast_das
 
     async def get_variables(self, ids: List[str]):
         variable_rows, col_names = await fetch_variables_for_ids(ids)
@@ -134,63 +136,65 @@ class CarbonCalculator:
 
         return variables_dict
 
-    async def get_bio_carbon(
-        self, wkts: List[str], crs: str
-    ) -> List[xr.DataArray]:
-        rasts = await fetch_bio_carbon_for_regions(
-            wkts,
-            crs,
-            simplify_calcs=self.simplify_calcs,
-        )
-        sorted_rasts = sorted(rasts, key=lambda x: x[1])
+    # Unused: legacy codepath for fetching full rasters and processing client-side.
+    # async def get_bio_carbon(
+    #     self, wkts: List[str], crs: str
+    # ) -> List[xr.DataArray]:
+    #     rasts = await fetch_bio_carbon_for_regions(
+    #         wkts,
+    #         crs,
+    #         simplify_calcs=self.simplify_calcs,
+    #     )
+    #     sorted_rasts = sorted(rasts, key=lambda x: x[1])
+    #
+    #     rast_das = []
+    #     for rast in sorted_rasts:
+    #         try:
+    #             with tempfile.NamedTemporaryFile(
+    #                 suffix=".tiff", delete=True
+    #             ) as tmpfile:
+    #                 await asyncio.to_thread(tmpfile.write, rast[0])
+    #                 tmpfile.flush()
+    #
+    #                 # Use rioxarray to directly open the temporary raster file
+    #                 rast_da = rxr.open_rasterio(tmpfile.name, masked=True).isel(band=0)
+    #                 rast_da.where(rast_da < 32766)
+    #
+    #                 rast_das.append(rast_da)
+    #         except Exception as e:
+    #             print(e)
+    #
+    #     return rast_das
 
-        rast_das = []
-        for rast in sorted_rasts:
-            try:
-                with tempfile.NamedTemporaryFile(
-                    suffix=".tiff", delete=True
-                ) as tmpfile:
-                    await asyncio.to_thread(tmpfile.write, rast[0])
-                    tmpfile.flush()
-
-                    # Use rioxarray to directly open the temporary raster file
-                    rast_da = rxr.open_rasterio(tmpfile.name, masked=True).isel(band=0)
-                    rast_da.where(rast_da < 32766)
-
-                    rast_das.append(rast_da)
-            except Exception as e:
-                print(e)
-
-        return rast_das
-
-    async def get_ground_carbon(
-        self, wkts: List[str], crs: str
-    ) -> List[xr.DataArray]:
-        rasts = await fetch_ground_carbon_for_regions(
-            wkts,
-            crs,
-            simplify_calcs=self.simplify_calcs,
-        )
-        sorted_rasts = sorted(rasts, key=lambda x: x[1])
-
-        rast_das = []
-        for rast in sorted_rasts:
-            try:
-                with tempfile.NamedTemporaryFile(
-                    suffix=".tiff", delete=True
-                ) as tmpfile:
-                    await asyncio.to_thread(tmpfile.write, rast[0])
-                    tmpfile.flush()
-
-                    # Use rioxarray to directly open the temporary raster file
-                    rast_da = rxr.open_rasterio(tmpfile.name, masked=True).isel(band=0)
-                    rast_da.where(rast_da < 32766)
-
-                    rast_das.append(rast_da)
-            except Exception as e:
-                print(e)
-
-        return rast_das
+    # Unused: legacy codepath for fetching full rasters and processing client-side.
+    # async def get_ground_carbon(
+    #     self, wkts: List[str], crs: str
+    # ) -> List[xr.DataArray]:
+    #     rasts = await fetch_ground_carbon_for_regions(
+    #         wkts,
+    #         crs,
+    #         simplify_calcs=self.simplify_calcs,
+    #     )
+    #     sorted_rasts = sorted(rasts, key=lambda x: x[1])
+    #
+    #     rast_das = []
+    #     for rast in sorted_rasts:
+    #         try:
+    #             with tempfile.NamedTemporaryFile(
+    #                 suffix=".tiff", delete=True
+    #             ) as tmpfile:
+    #                 await asyncio.to_thread(tmpfile.write, rast[0])
+    #                 tmpfile.flush()
+    #
+    #                 # Use rioxarray to directly open the temporary raster file
+    #                 rast_da = rxr.open_rasterio(tmpfile.name, masked=True).isel(band=0)
+    #                 rast_da.where(rast_da < 32766)
+    #
+    #                 rast_das.append(rast_da)
+    #         except Exception as e:
+    #             print(e)
+    #
+    #     return rast_das
 
     # def dummy_combine_data(
     #     self,
@@ -270,54 +274,48 @@ class CarbonCalculator:
             area_multipliers_bio.append(multiplier_bio)
             area_multipliers_ground.append(multiplier_ground)
 
-        wkt_list = []
         wkt_list = self.zone.geometry.to_wkt().tolist()
-        # if self.simplify_calcs:
-        # else:
-        #     wkt_list = self.zone.buffered_geometry.to_wkt().tolist()
 
-        rasts = await self.get_rasts(wkt_list=wkt_list, crs=crs)
+        segment_area_rows = await fetch_segment_areas_ha_for_regions(
+            wkt_list,
+            crs,
+            simplify_calcs=self.simplify_calcs,
+        )
+        bio_sum_rows = await fetch_weighted_raster_sum_ha_for_regions(
+            "hiilikartta_kasvillisuudenhiili_2021_tcha",
+            wkt_list,
+            crs,
+            simplify_calcs=self.simplify_calcs,
+        )
+        ground_sum_rows = await fetch_weighted_raster_sum_ha_for_regions(
+            "hiilikartta_maaperanhiili_2023_tcha",
+            wkt_list,
+            crs,
+            simplify_calcs=self.simplify_calcs,
+        )
 
-        rast_overlaps = []
-        for idx, rast in enumerate(rasts):
-            overlap_mask = get_overlap_mask(
-                rast, self.zone.iloc[idx].geometry, self.simplify_calcs
-            )
-            rasts[idx] = rast.where(overlap_mask != 0, np.nan)
-            rast_overlaps.append(overlap_mask)
+        segment_areas_by_order: Dict[int, Dict[int, float]] = {
+            order_num: {} for order_num in range(1, len(wkt_list) + 1)
+        }
+        for order_num, segment_id, area_ha in segment_area_rows:
+            segment_areas_by_order[int(order_num)][int(segment_id)] = float(area_ha)
 
-        uniq_vals = np.array([])
-        for data_array in rasts:
-            uniq_vals = np.concatenate([uniq_vals, np.unique(data_array)])
+        bio_sum_by_order: Dict[int, float] = {}
+        for order_num, sum_weighted_ha in bio_sum_rows:
+            bio_sum_by_order[int(order_num)] = float(sum_weighted_ha or 0.0)
 
-        uniq_vals = np.unique(uniq_vals[~np.isnan(uniq_vals)])
+        ground_sum_by_order: Dict[int, float] = {}
+        for order_num, sum_weighted_ha in ground_sum_rows:
+            ground_sum_by_order[int(order_num)] = float(sum_weighted_ha or 0.0)
 
-        uniq_ids_list = [int(val) for val in uniq_vals]
+        uniq_ids_set = set()
+        for segment_areas in segment_areas_by_order.values():
+            uniq_ids_set.update(segment_areas.keys())
 
-        variables_dict = await self.get_variables(uniq_ids_list)
-
-        bio_carbon_rasts = await self.get_bio_carbon(wkt_list, crs=crs)
-        ground_carbon_rasts = await self.get_ground_carbon(wkt_list, crs=crs)
-
-        bio_carbon_masks = []
-        i = 0
-        for rast in bio_carbon_rasts:
-            overlap_mask = get_overlap_mask(
-                rast, self.zone.iloc[i].geometry, self.simplify_calcs
-            )
-            rast = rast.where(overlap_mask != 0, np.nan)
-            bio_carbon_masks.append(overlap_mask)
-            i += 1
-
-        ground_carbon_masks = []
-        i = 0
-        for rast in ground_carbon_rasts:
-            overlap_mask = get_overlap_mask(
-                rast, self.zone.iloc[i].geometry, self.simplify_calcs
-            )
-            rast = rast.where(overlap_mask != 0, np.nan)
-            ground_carbon_masks.append(overlap_mask)
-            i += 1
+        uniq_ids_list = sorted(uniq_ids_set)
+        variables_dict = {}
+        if uniq_ids_list:
+            variables_dict = await self.get_variables(uniq_ids_list)
 
         calcs_df = self.zone[["id", "geometry", zoning_col]].copy()
         calcs_df["area"] = self.zone.geometry.area
@@ -329,25 +327,56 @@ class CarbonCalculator:
         years_int = [current_year] + list(range(2030, 2100, 5))
         years = [str(year) for year in years_int]
 
-        bm_curve_values, bm_curve_masks = await get_bm_curve_values_for_years_mabp(
-            rasts, years, bm_curves_df, variables_dict, rast_overlaps
-        )
+        bm_curve_keys = [
+            "Region",
+            "Maingroup",
+            "Soiltype",
+            "Drainage",
+            "Fertility",
+            "Species",
+            "Structure",
+            "Regime",
+        ]
+        mabp_lookup: Dict[tuple[int, ...], float] = {}
+        for _, row in bm_curves_df.iterrows():
+            key = tuple(int(row[col]) for col in bm_curve_keys)
+            if key not in mabp_lookup:
+                mabp_lookup[key] = float(row["Mabp"])
+
+        segment_mabp: Dict[int, float] = {}
+        for segment_id in uniq_ids_list:
+            variables = variables_dict.get(segment_id)
+            if not variables:
+                continue
+            try:
+                key = tuple(int(variables[col]) for col in bm_curve_keys)
+            except Exception:
+                continue
+            mabp = mabp_lookup.get(key)
+            if mabp is not None:
+                segment_mabp[segment_id] = mabp
+
+        bm_curve_contrib_by_order: Dict[int, Dict[str, float]] = {}
+        for order_num, segment_areas in segment_areas_by_order.items():
+            year_totals = {year: 0.0 for year in years}
+            was_found = False
+            for segment_id, area_ha in segment_areas.items():
+                mabp = segment_mabp.get(segment_id)
+                if mabp is None:
+                    continue
+                was_found = True
+                for year in years:
+                    year_diff = int(year) - 2021
+                    year_totals[year] += area_ha * mabp * year_diff
+            if was_found:
+                bm_curve_contrib_by_order[order_num] = year_totals
 
         # generate bio carbon values
         base_col = "bio_carbon_total"
-        bio_masks_no_curve_vals = []
-        base_vals = []
-        base_vals_no_bm_curve = []
-        for index, rast in enumerate(bio_carbon_rasts):
-            rast_masked = rast * bio_carbon_masks[index]
-
-            sum = rast_masked.sum().values.item()
-            base_vals.append(sum * grid_to_ha * c_to_co2)
-
-            # sum_no_bm_curve_val = sum
-            # if (bm_curve_masks[index] is not None):
-            #     sum_no_bm_curve_val = (rast_masked * ~bm_curve_masks[index]).sum().values.item()
-            # base_vals_no_bm_curve.append(sum_no_bm_curve_val)
+        base_vals = [
+            bio_sum_by_order.get(order_num, 0.0) * c_to_co2
+            for order_num in range(1, len(wkt_list) + 1)
+        ]
 
         for suffix in ["nochange", "planned"]:
             use_multiplier = False
@@ -357,10 +386,11 @@ class CarbonCalculator:
             for year in years:
                 vals = []
 
-                for idx, year_dict in enumerate(bm_curve_values):
-                    val = base_vals[idx]
-                    if year_dict is not None:
-                        val += year_dict[year] * grid_to_ha
+                for idx, base_val in enumerate(base_vals):
+                    val = base_val
+                    contrib = bm_curve_contrib_by_order.get(idx + 1)
+                    if contrib is not None:
+                        val += contrib[year]
                     if use_multiplier and year != str(current_year):
                         vals.append(val * area_multipliers_bio[idx])
                     else:
@@ -372,16 +402,10 @@ class CarbonCalculator:
 
         # generate ground carbon values
         base_col = "ground_carbon_total"
-        base_vals = []
-        for index, rast in enumerate(ground_carbon_rasts):
-            rast_masked = rast * ground_carbon_masks[index]
-
-            sum = rast_masked.sum().values.item()
-            base_vals.append(sum * grid_to_ha * c_to_co2)
-
-            # if (bm_curve_masks[index] is not None):
-            #     sum_no_bm_curve_val = (rast_masked * ~bm_curve_masks[index]).sum().values.item()
-            # base_vals_no_bm_curve.append(sum_no_bm_curve_val)
+        base_vals = [
+            ground_sum_by_order.get(order_num, 0.0) * c_to_co2
+            for order_num in range(1, len(wkt_list) + 1)
+        ]
 
         for suffix in ["nochange", "planned"]:
             use_multiplier = False
