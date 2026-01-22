@@ -394,3 +394,69 @@ async def fetch_weighted_raster_sum_ha_for_regions(
     except SQLAlchemyError as ex:
         logger.exception(ex)
         raise
+
+
+async def fetch_natcode_for_regions(
+    wkts: List[str],
+    crs: str,
+    db_session: Optional[AsyncSession] = None,
+):
+    """
+    Resolve the best-matching region code for each input geometry.
+
+    Uses the `maakunta` table:
+    - geometry column: `geom`
+    - code column: `natcode` (string like "01", "11")
+
+    Strategy: pick the `maakunta` polygon with the largest intersection area
+    with the input geometry.
+    """
+    crs_int = int(crs)
+
+    try:
+        wkt_list_str = ",".join([f"('{wkt}')" for wkt in wkts])
+
+        statement = text(
+            f"""
+            WITH input_geoms AS (
+                SELECT
+                    idx AS order_num,
+                    ST_SetSRID(ST_GeomFromText(wkt), :crs) AS geom
+                FROM unnest(array[{wkt_list_str}]) WITH ORDINALITY AS indexed_wkt(wkt, idx)
+            ),
+            matches AS (
+                SELECT
+                    g.order_num,
+                    m.natcode::text AS natcode,
+                    ST_Area(ST_Intersection(m.geom, g.geom)) AS intersect_area
+                FROM maakunta m
+                JOIN input_geoms g
+                    ON ST_Intersects(m.geom, g.geom)
+            ),
+            ranked AS (
+                SELECT
+                    order_num,
+                    natcode,
+                    intersect_area,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY order_num
+                        ORDER BY intersect_area DESC
+                    ) AS rn
+                FROM matches
+            )
+            SELECT order_num, natcode
+            FROM ranked
+            WHERE rn = 1
+            ORDER BY order_num;
+            """
+        )
+
+        async with _get_throttled_session(db_session) as session:
+            result = await session.execute(statement, {"crs": crs_int})
+            rows = result.fetchall()
+
+        return rows
+
+    except SQLAlchemyError as ex:
+        logger.exception(ex)
+        raise

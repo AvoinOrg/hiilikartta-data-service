@@ -35,7 +35,12 @@ from app.db.plan import (
 )  # Import the methods from plan.py
 from app.db.models.plan import Plan
 from app.utils.logger import get_logger
-from app.utils.data_loader import load_area_multipliers, load_bm_curves, unload_files
+from app.utils.data_loader import (
+    load_area_multipliers,
+    load_bm_curves,
+    load_landuse_sequestration,
+    unload_files,
+)
 from app.saq_worker import queue
 from app.auth.validator import ZitadelIntrospectTokenValidator, ValidatorError
 from app.utils.analytics import track_calculation_initiated, track_calculation_new_plan
@@ -49,6 +54,7 @@ async def lifespan(app: FastAPI):
     # Startup event
     load_area_multipliers()
     load_bm_curves()
+    load_landuse_sequestration()
 
     yield
 
