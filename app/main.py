@@ -39,6 +39,7 @@ from app.utils.data_loader import (
     load_area_multipliers,
     load_bm_curves,
     load_landuse_sequestration,
+    load_soil_curves,
     unload_files,
 )
 from app.saq_worker import queue
@@ -54,6 +55,7 @@ async def lifespan(app: FastAPI):
     # Startup event
     load_area_multipliers()
     load_bm_curves()
+    load_soil_curves()
     load_landuse_sequestration()
 
     yield

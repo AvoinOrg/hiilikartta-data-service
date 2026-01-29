@@ -2,6 +2,7 @@ import pandas as pd
 
 data_path = "data"
 bm_curve_df = None
+soil_curve_df = None
 area_multipliers_df = None
 landuse_sequestration_df = None
 
@@ -9,6 +10,11 @@ landuse_sequestration_df = None
 def load_bm_curves():
     global bm_curve_df
     bm_curve_df = pd.read_csv(f"{data_path}/BiomassCurves.txt")
+
+
+def load_soil_curves():
+    global soil_curve_df
+    soil_curve_df = pd.read_csv(f"{data_path}/SoilCurves.txt")
 
 
 def load_area_multipliers():
@@ -46,6 +52,12 @@ def get_bm_curve_df() -> pd.DataFrame:
     return bm_curve_df
 
 
+def get_soil_curve_df() -> pd.DataFrame:
+    if (soil_curve_df is None) or (len(soil_curve_df) == 0):
+        load_soil_curves()
+    return soil_curve_df
+
+
 def get_landuse_sequestration_df() -> pd.DataFrame:
     if (landuse_sequestration_df is None) or (len(landuse_sequestration_df) == 0):
         load_landuse_sequestration()
@@ -54,8 +66,10 @@ def get_landuse_sequestration_df() -> pd.DataFrame:
 
 def unload_files():
     global bm_curve_df
+    global soil_curve_df
     global area_multipliers_df
     global landuse_sequestration_df
     bm_curve_df = None
+    soil_curve_df = None
     area_multipliers_df = None
     landuse_sequestration_df = None

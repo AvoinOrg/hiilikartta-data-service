@@ -17,7 +17,11 @@ from app.db.gis import (
     fetch_variables_for_ids,
     fetch_weighted_raster_sum_ha_for_regions,
 )
-from app.utils.data_loader import get_bm_curve_df, get_landuse_sequestration_df
+from app.utils.data_loader import (
+    get_bm_curve_df,
+    get_landuse_sequestration_df,
+    get_soil_curve_df,
+)
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -61,6 +65,11 @@ SEQUESTRATION_COL_SOIL_OPEN = "Uusi_avoin_kasvillisuus_maaperan_hiilensidonta_t_
 SEQUESTRATION_COL_SOIL_TREE = (
     "Uusi_puustoinen_kasvillisuus_maaperan_hiilensidonta_t_CO2"
 )
+
+POWERLINE_ZONING_CODES = {"ENsl", "ENslja"}
+# The intended special Maingroup for powerline biomass curves is 4, but it is not
+# present in BiomassCurves.txt yet. Use a placeholder value for now.
+POWERLINE_BIOMASS_MAINGROUP = 1
 
 
 class CalculationResult(TypedDict):
@@ -208,6 +217,78 @@ def _get_bm_curve_series_by_key(
 
     _BM_CURVE_SERIES_CACHE = (max_year, by_key_rotation, by_key_no_rotation)
     return _BM_CURVE_SERIES_CACHE
+
+
+_SOIL_CURVE_SERIES_CACHE: Optional[
+    Tuple[
+        int,
+        Dict[Tuple[int, ...], List[float]],
+        Dict[Tuple[int, ...], List[float]],
+    ]
+] = None
+
+
+def _get_soil_curve_series_by_key(
+    soil_curves_df: pd.DataFrame,
+) -> Tuple[int, Dict[Tuple[int, ...], List[float]], Dict[Tuple[int, ...], List[float]]]:
+    """
+    Build (and cache) a mapping from categorical variables to the soil curve's
+    yearly series (year1..yearN).
+
+    Returns:
+      - max_year: maximum year index available (N)
+      - by_key_rotation: key includes Rotation
+      - by_key_no_rotation: key excludes Rotation (fallback)
+    """
+    global _SOIL_CURVE_SERIES_CACHE
+    if _SOIL_CURVE_SERIES_CACHE is not None:
+        return _SOIL_CURVE_SERIES_CACHE
+
+    key_cols_with_rotation = [
+        "Region",
+        "Maingroup",
+        "Soiltype",
+        "Drainage",
+        "Fertility",
+        "Species",
+        "Structure",
+        "Regime",
+        "Rotation",
+    ]
+    key_cols_no_rotation = key_cols_with_rotation[:-1]
+
+    def _year_col_num(col: str) -> int:
+        try:
+            return int(col.replace("year", ""))
+        except Exception:
+            return -1
+
+    year_cols = [col for col in soil_curves_df.columns if col.startswith("year")]
+    year_cols.sort(key=_year_col_num)
+    max_year = _year_col_num(year_cols[-1]) if year_cols else 0
+
+    by_key_rotation: Dict[Tuple[int, ...], List[float]] = {}
+    by_key_no_rotation: Dict[Tuple[int, ...], List[float]] = {}
+
+    for _, row in soil_curves_df.iterrows():
+        try:
+            key_rot = tuple(int(row[col]) for col in key_cols_with_rotation)
+            key_no_rot = tuple(int(row[col]) for col in key_cols_no_rotation)
+        except Exception:
+            continue
+
+        series = []
+        for col in year_cols:
+            value = _coerce_float(row[col])
+            series.append(0.0 if value is None else float(value))
+
+        if key_rot not in by_key_rotation:
+            by_key_rotation[key_rot] = series
+        if key_no_rot not in by_key_no_rotation:
+            by_key_no_rotation[key_no_rot] = series
+
+    _SOIL_CURVE_SERIES_CACHE = (max_year, by_key_rotation, by_key_no_rotation)
+    return _SOIL_CURVE_SERIES_CACHE
 
 
 def _bm_curve_value_at_age(series: List[float], age_years: int) -> float:
@@ -429,6 +510,7 @@ class CarbonCalculator:
 
     async def calculate(self) -> CalculationResult:
         bm_curves_df = get_bm_curve_df()
+        soil_curves_df = get_soil_curve_df()
         sequestration_df = get_landuse_sequestration_df()
 
         if zoning_col not in self.zone.columns:
@@ -607,10 +689,12 @@ class CarbonCalculator:
         veg_tree_coeffs: List[float] = []
         soil_open_coeffs: List[float] = []
         soil_tree_coeffs: List[float] = []
+        zoning_codes: List[str] = []
 
         for idx in range(area_count):
             maakunta = maakunta_codes[idx]
             code = str(self.zone.iloc[idx][zoning_col]).strip()
+            zoning_codes.append(code)
             k_veg_open = 0.0
             k_veg_tree = 0.0
             k_soil_open = 0.0
@@ -640,9 +724,12 @@ class CarbonCalculator:
         soil_changed_rate_co2_per_year: List[float] = []
         for idx in range(area_count):
             area_ha = float(calcs_df.iloc[idx]["area_ha"] or 0.0)
+            veg_tree_share = new_tree_fracs[idx]
+            if zoning_codes[idx] in POWERLINE_ZONING_CODES:
+                veg_tree_share = 0.0
             veg_rate = area_ha * (
                 new_open_fracs[idx] * veg_open_coeffs[idx]
-                + new_tree_fracs[idx] * veg_tree_coeffs[idx]
+                + veg_tree_share * veg_tree_coeffs[idx]
             )
             soil_rate = area_ha * (
                 new_open_fracs[idx] * soil_open_coeffs[idx]
@@ -655,9 +742,30 @@ class CarbonCalculator:
         max_year, curve_by_key_rot, curve_by_key_no_rot = _get_bm_curve_series_by_key(
             bm_curves_df
         )
+        soil_max_year, soil_curve_by_key_rot, soil_curve_by_key_no_rot = (
+            _get_soil_curve_series_by_key(soil_curves_df)
+        )
 
         veg_curve_delta_co2_by_order: Dict[int, Dict[int, float]] = {
             order_num: {year: 0.0 for year in years_int}
+            for order_num in range(1, area_count + 1)
+        }
+        soil_curve_delta_co2_by_order: Dict[int, Dict[int, float]] = {
+            order_num: {year: 0.0 for year in years_int}
+            for order_num in range(1, area_count + 1)
+        }
+
+        veg_powerline_tree_delta_co2_by_order: Dict[int, Dict[int, float]] = {
+            order_num: {year: 0.0 for year in years_int}
+            for order_num in range(1, area_count + 1)
+        }
+
+        zoning_codes_by_order: Dict[int, str] = {
+            order_num: str(self.zone.iloc[order_num - 1][zoning_col]).strip()
+            for order_num in range(1, area_count + 1)
+        }
+        is_powerline_zone_by_order: Dict[int, bool] = {
+            order_num: zoning_codes_by_order[order_num] in POWERLINE_ZONING_CODES
             for order_num in range(1, area_count + 1)
         }
 
@@ -709,19 +817,86 @@ class CarbonCalculator:
                     series = curve_by_key_rot.get(key_rot)
                 if series is None and key_no_rot is not None:
                     series = curve_by_key_no_rot.get(key_no_rot)
-                if series is None:
+                if series is not None:
+                    age_base_at_raster_year = max(0, min(age_base, max_year))
+                    value_base = _bm_curve_value_at_age(series, age_base_at_raster_year)
+
+                    for year in years_int:
+                        age_year = age_base + (year - variables_base_year)
+                        age_year = max(0, min(age_year, max_year))
+                        value_year = _bm_curve_value_at_age(series, age_year)
+                        delta_per_ha = value_year - value_base
+                        veg_curve_delta_co2_by_order[order_num][year] += (
+                            float(segment_area_ha) * float(delta_per_ha) * c_to_co2
+                        )
+
+                soil_series = None
+                if key_rot is not None:
+                    soil_series = soil_curve_by_key_rot.get(key_rot)
+                if soil_series is None and key_no_rot is not None:
+                    soil_series = soil_curve_by_key_no_rot.get(key_no_rot)
+
+                if soil_series is not None:
+                    soil_raster_base_year = 2023
+                    age_base_at_soil_raster_year = age_base + (
+                        soil_raster_base_year - variables_base_year
+                    )
+                    age_base_at_soil_raster_year = max(
+                        0, min(age_base_at_soil_raster_year, soil_max_year)
+                    )
+                    soil_value_base = _bm_curve_value_at_age(
+                        soil_series, age_base_at_soil_raster_year
+                    )
+
+                    for year in years_int:
+                        age_year = age_base + (year - variables_base_year)
+                        age_year = max(0, min(age_year, soil_max_year))
+                        soil_value_year = _bm_curve_value_at_age(soil_series, age_year)
+                        soil_delta_per_ha = soil_value_year - soil_value_base
+                        soil_curve_delta_co2_by_order[order_num][year] += (
+                            float(segment_area_ha)
+                            * float(soil_delta_per_ha)
+                            * c_to_co2
+                        )
+
+                if not is_powerline_zone_by_order.get(order_num, False):
                     continue
 
-                age_base_at_raster_year = max(0, min(age_base, max_year))
-                value_base = _bm_curve_value_at_age(series, age_base_at_raster_year)
+                if key_no_rot is None:
+                    continue
 
+                powerline_key_no_rot = (
+                    int(variables["Region"]),
+                    int(POWERLINE_BIOMASS_MAINGROUP),
+                    int(variables["Soiltype"]),
+                    int(variables["Drainage"]),
+                    int(variables["Fertility"]),
+                    int(variables["Species"]),
+                    int(variables["Structure"]),
+                    int(variables["Regime"]),
+                )
+                powerline_rotation = _get_int_var(variables, ["Rotation", "rotation"])
+                powerline_key_rot = None
+                if powerline_rotation is not None:
+                    powerline_key_rot = tuple(list(powerline_key_no_rot) + [powerline_rotation])
+
+                powerline_series = None
+                if powerline_key_rot is not None:
+                    powerline_series = curve_by_key_rot.get(powerline_key_rot)
+                if powerline_series is None:
+                    powerline_series = curve_by_key_no_rot.get(powerline_key_no_rot)
+
+                if powerline_series is None:
+                    continue
+
+                base_tree_value = _bm_curve_value_at_age(powerline_series, 0)
                 for year in years_int:
-                    age_year = age_base + (year - variables_base_year)
-                    age_year = max(0, min(age_year, max_year))
-                    value_year = _bm_curve_value_at_age(series, age_year)
-                    delta_per_ha = value_year - value_base
-                    veg_curve_delta_co2_by_order[order_num][year] += (
-                        float(segment_area_ha) * float(delta_per_ha) * c_to_co2
+                    age_since_plan = max(0, int(year) - int(current_year))
+                    age_since_plan = max(0, min(age_since_plan, max_year))
+                    tree_value_year = _bm_curve_value_at_age(powerline_series, age_since_plan)
+                    tree_delta_per_ha = tree_value_year - base_tree_value
+                    veg_powerline_tree_delta_co2_by_order[order_num][year] += (
+                        float(segment_area_ha) * float(tree_delta_per_ha) * c_to_co2
                     )
 
         sum_cols: List[str] = []
@@ -739,17 +914,25 @@ class CarbonCalculator:
             for idx in range(area_count):
                 order_num = idx + 1
                 veg_delta = veg_curve_delta_co2_by_order.get(order_num, {}).get(year, 0.0)
+                soil_delta = soil_curve_delta_co2_by_order.get(order_num, {}).get(year, 0.0)
+                powerline_tree_delta = veg_powerline_tree_delta_co2_by_order.get(
+                    order_num, {}
+                ).get(year, 0.0)
 
                 veg_nochange_vals.append(base_bio_co2[idx] + veg_delta)
-                soil_nochange_vals.append(base_soil_co2[idx])
+                soil_nochange_vals.append(base_soil_co2[idx] + soil_delta)
 
-                veg_planned_vals.append(
+                veg_planned = (
                     planned_bio_base_co2[idx]
                     + existing_fracs[idx] * veg_delta
                     + veg_changed_rate_co2_per_year[idx] * delta_years
                 )
+                if is_powerline_zone_by_order.get(order_num, False):
+                    veg_planned += new_tree_fracs[idx] * powerline_tree_delta
+                veg_planned_vals.append(veg_planned)
                 soil_planned_vals.append(
                     planned_soil_base_co2[idx]
+                    + existing_fracs[idx] * soil_delta
                     + soil_changed_rate_co2_per_year[idx] * delta_years
                 )
 

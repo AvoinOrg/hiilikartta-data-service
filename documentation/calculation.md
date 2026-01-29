@@ -72,13 +72,14 @@ Both rasters are treated as **tC/ha** and converted to **tCO2** using:
 
 Implementation: `app/db/gis.py` (`fetch_weighted_raster_sum_ha_for_regions`).
 
-### No-change sequestration (segments + biomass curves)
+### No-change sequestration (segments + curve tables)
 
 For part D, the implementation uses:
 
 - Segment-id raster: `luke_mvmisegmentit_id_kokomaa` (pixel value = `kuvio` id)
 - Segment variables table: `luke_mvmisegmentit_muuttujat_kokomaa`
-- Biomass curves: `data/BiomassCurves.txt`
+- Biomass curves (vegetation): `data/BiomassCurves.txt`
+- Soil curves: `data/SoilCurves.txt`
 
 Biomass curves are matched by:
 
@@ -86,7 +87,7 @@ Biomass curves are matched by:
 
 with a fallback match that ignores `Rotation` if needed.
 
-The new model uses the **year1..yearN series** (not `Mabp`) to compute future changes.
+The new model uses the **year1..yearN series** (not `Mabp`) to compute future changes for both vegetation and soil.
 
 ### Changed-land sequestration coefficients (CSV)
 
@@ -164,7 +165,7 @@ Scenarios:
 - `soil_nochange_base = soil_base`
 - `soil_planned_base = f_existing * soil_base + f_new_veg * soil_retention * soil_base`
 
-### D) Sequestration on “no-change land” (biomass curves, yearly series)
+### D) Sequestration on “no-change land” (curve series)
 
 This part produces a **delta** `Δveg(year)` for the polygon, measured from the **vegetation raster base year (2021)**:
 
@@ -181,7 +182,15 @@ Scenarios:
 - `veg_nochange(year) = veg_nochange_base + Δveg(year)`
 - `veg_planned(year) includes only existing-share growth from D: f_existing * Δveg(year)` (see total formula below)
 
-Soil change in D is **not yet implemented** in the current code (no soil time series is available in the current inputs), so soil stays constant unless part E adds it.
+This part also produces a soil delta `Δsoil(year)` for the polygon from the soil curves, measured from the **soil raster base year (2023)**:
+
+- `delta_per_ha = soil_curve(age_year) - soil_curve(age_2023)`
+- accumulate `Δsoil(year) += area_ha(segment) * delta_per_ha * c_to_co2`
+
+Scenarios:
+
+- `soil_nochange(year) = soil_nochange_base + Δsoil(year)`
+- `soil_planned(year) includes only existing-share change from D: f_existing * Δsoil(year)` (see total formula below)
 
 ### E) Sequestration on changed land (annual coefficients)
 
@@ -200,15 +209,32 @@ For a reporting year `year`, with `Δyears = max(0, year - current_year)`:
 - vegetation changed-land contribution: `veg_rate * Δyears`
 - soil changed-land contribution: `soil_rate * Δyears`
 
+#### Powerline zones (ENsl / ENslja)
+
+For `zoning_code` in `{ENsl, ENslja}`, the **tree-cover vegetation term** is handled specially:
+
+- The `f_tree * k_veg_tree` part is **not** used (to avoid double counting).
+- Instead, the `landuse_new_tree_vegetation` share is calculated from biomass curves using the same row-selection logic, but with a special `Maingroup` override.
+  - Intended override: `Maingroup = 4`
+  - Current placeholder (until curves exist): `Maingroup = 1`
+
+The curve-based tree term is computed from plan start (so it is `0` at `current_year`):
+
+`Δveg_tree_powerline(year) = Σ(area_ha(segment) * (curve(age_since_plan) - curve(0)) * c_to_co2)`
+
+and included as:
+
+`veg_planned_total += f_tree * Δveg_tree_powerline(year)`
+
 ## Final per-year scenario formulas (what the code currently does)
 
 For each reporting `year`:
 
 - `veg_nochange_total(year) = veg_base + Δveg(year)`
-- `soil_nochange_total(year) = soil_base`
+- `soil_nochange_total(year) = soil_base + Δsoil(year)`
 
-- `veg_planned_total(year) = veg_planned_base + f_existing * Δveg(year) + veg_rate * Δyears`
-- `soil_planned_total(year) = soil_planned_base + soil_rate * Δyears`
+- `veg_planned_total(year) = veg_planned_base + f_existing * Δveg(year) + veg_rate * Δyears (+ powerline tree term)`
+- `soil_planned_total(year) = soil_planned_base + f_existing * Δsoil(year) + soil_rate * Δyears`
 
 Per-hectare outputs are derived as:
 
@@ -227,9 +253,10 @@ Key in-memory structures in `app/calculator/calculator.py`:
 - `segment_areas_by_order[order_num][segment_id] -> area_ha`
 - `variables_dict[segment_id] -> {Region, Maingroup, ..., Age, Rotation, ...}`
 - `veg_curve_delta_co2_by_order[order_num][year] -> Δveg(year) in tCO2`
+- `soil_curve_delta_co2_by_order[order_num][year] -> Δsoil(year) in tCO2`
+- `veg_powerline_tree_delta_co2_by_order[order_num][year] -> Δveg_tree_powerline(year) in tCO2`
 
 ## Known Gaps / Pending Clarifications
 
-- Part D soil time series: spec says soil change depends only on attributes, but no soil series source is wired in yet.
 - Part E “change class” (maanpeitteen muutos -luokka): current implementation uses only `(Maakunta, Lyhenne)` coefficients.
-- Enslrv special rule: not implemented beyond whatever coefficients exist for the `zoning_code`.
+- Powerline curves: `Maingroup = 4` does not exist in `data/BiomassCurves.txt` yet; code uses a placeholder value for now.
