@@ -31,7 +31,7 @@ services:
   worker-dev:
     build: .
     image: hiilikartta-data-service
-    # command: poetry run watchmedo auto-restart --directory='app' --recursive -- saq app.saq_worker.settings --workers 3 --web
+    # command: poetry run watchmedo auto-restart --directory='app' --recursive -- saq app.saq_worker.settings --workers ${SAQ_WORKERS_COUNT:-3} --web
     env_file:
       - ./.env
     environment:

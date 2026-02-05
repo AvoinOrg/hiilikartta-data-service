@@ -69,6 +69,7 @@ docker compose exec state-db-dev sh -lc \
 Authoritative list: `.env.template`. Highlights:
 
 - **Ports (dev compose)**: `DEV_PORT`, `NOTEBOOK_PORT`, `SAQ_WEB_PORT`
+- **SAQ workers**: `SAQ_WORKERS_COUNT`
 - **Redis**: `REDIS_HOST`, `REDIS_PORT` (set by compose for app/worker)
 - **State DB**: `STATE_PG_*` (dev), `STATE_PG_TEST_*` (tests)
 - **GIS DB**: `GIS_PG_*` (must point to a PostGIS DB with required datasets)
@@ -113,4 +114,3 @@ Loaded into memory on API startup (`app/utils/data_loader.py`):
 - GIS SQL: `app/db/gis.py` (be careful: performance + PostGIS semantics)
 - State DB access/model: `app/db/plan.py`, `app/db/models/plan.py`, `alembic/`
 - Devcontainer: `.devcontainer/devcontainer.json`
-

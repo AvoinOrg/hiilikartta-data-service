@@ -26,7 +26,7 @@ services:
   worker-prod:
     build: .
     image: hiilikartta-data-service
-    command: /bin/bash -lc "cd /app && poetry run saq --workers 25 app.saq_worker.settings --web"
+    command: /bin/bash -lc "cd /app && poetry run saq --workers ${SAQ_WORKERS_COUNT:-25} app.saq_worker.settings --web"
     env_file:
       - ./.env
     environment:

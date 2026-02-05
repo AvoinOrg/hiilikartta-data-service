@@ -134,6 +134,10 @@ At minimum you must set the GIS connection values:
 
 - `GIS_PG_USER`, `GIS_PG_PASSWORD`, `GIS_PG_DB`, `GIS_PG_HOST`, `GIS_PG_PORT`
 
+Optional tuning:
+
+- `SAQ_WORKERS_COUNT` (worker process count; dev default is 3)
+
 For authenticated endpoints, also set:
 
 - `ZITADEL_DOMAIN`, `ZITADEL_CLIENT_ID`, `ZITADEL_CLIENT_SECRET`
