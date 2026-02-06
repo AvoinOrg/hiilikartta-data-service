@@ -53,7 +53,7 @@ docker compose up --build
 
 Default URLs:
 
-- API: `http://localhost:${DEV_PORT}` (docs at `/docs`)
+- API: `http://localhost:${APP_PORT}` (docs at `/docs`)
 - Jupyter: `http://localhost:${NOTEBOOK_PORT}` (token: `NOTEBOOK_TOKEN`)
 - SAQ Web UI: `http://localhost:${SAQ_WEB_PORT}`
 
@@ -73,7 +73,7 @@ docker compose exec state-db-dev sh -lc \
 
 Authoritative list: `.env.template`. Highlights:
 
-- **Ports (dev compose)**: `DEV_PORT`, `NOTEBOOK_PORT`, `SAQ_WEB_PORT`
+- **Ports (compose)**: `APP_PORT`, `NOTEBOOK_PORT`, `SAQ_WEB_PORT`
 - **SAQ workers**: `SAQ_WORKERS_COUNT`
 - **Redis**: `REDIS_HOST`, `REDIS_PORT` (set by compose for app/worker)
 - **State DB**: `STATE_PG_*` (dev), `STATE_PG_TEST_*` (tests)

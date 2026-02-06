@@ -155,7 +155,7 @@ docker compose up --build
 
 Default URLs (from `.env.template`):
 
-- API: `http://localhost:${DEV_PORT}` (docs at `/docs`)
+- API: `http://localhost:${APP_PORT}` (docs at `/docs`)
 - Jupyter: `http://localhost:${NOTEBOOK_PORT}` (token: `NOTEBOOK_TOKEN`)
 - SAQ Web UI: `http://localhost:${SAQ_WEB_PORT}`
 

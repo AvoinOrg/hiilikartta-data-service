@@ -8,7 +8,7 @@ services:
       REDIS_HOST: "redis-dev"
       REDIS_PORT: "6379"
     ports:
-      - "${DEV_PORT}:80"
+      - "${APP_PORT}:80"
       - "${NOTEBOOK_PORT}:8888"
     volumes:
       - .:/app:z
