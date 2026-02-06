@@ -138,6 +138,11 @@ Optional tuning:
 
 - `SAQ_WORKERS_COUNT` (worker process count; dev default is 3)
 
+Safety rails:
+
+- Dev containers refuse to start unless `STATE_PG_DB` contains `dev`.
+- Tests refuse to run unless `STATE_PG_TEST_DB` contains `test` (tests run Alembic downgrade/upgrade against the test DB).
+
 For authenticated endpoints, also set:
 
 - `ZITADEL_DOMAIN`, `ZITADEL_CLIENT_ID`, `ZITADEL_CLIENT_SECRET`

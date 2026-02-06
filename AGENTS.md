@@ -40,6 +40,11 @@ cp .env.template .env
 
 You must set GIS connection values (`GIS_PG_*`). Without a working GIS DB, calculation endpoints will fail.
 
+Safety rails:
+
+- Dev containers refuse to start unless `STATE_PG_DB` contains `dev`.
+- Tests refuse to run unless `STATE_PG_TEST_DB` contains `test`.
+
 3. Start:
 
 ```bash

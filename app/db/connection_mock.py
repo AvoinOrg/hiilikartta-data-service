@@ -33,6 +33,12 @@ TEST_STATE_HOST = _settings.state_pg_test_host
 TEST_STATE_PORT = _settings.state_pg_test_port
 TEST_STATE_DB = _settings.state_pg_test_db
 
+if "test" not in str(TEST_STATE_DB).lower():
+    raise RuntimeError(
+        "Refusing to run tests because STATE_PG_TEST_DB does not contain 'test'. "
+        f"Got STATE_PG_TEST_DB={TEST_STATE_DB!r}."
+    )
+
 TEST_STATE_DATABASE_URL = (
     f"postgresql+asyncpg://{TEST_STATE_USER}:{TEST_STATE_PASSWORD}@"
     f"{TEST_STATE_HOST}:{TEST_STATE_PORT}/{TEST_STATE_DB}"
