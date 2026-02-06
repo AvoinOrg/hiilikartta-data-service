@@ -75,7 +75,7 @@ Authoritative list: `.env.template`. Highlights:
 
 - **Ports (compose)**: `APP_PORT`, `NOTEBOOK_PORT`, `SAQ_WEB_PORT`
 - **SAQ workers**: `SAQ_WORKERS_COUNT`
-- **Redis**: `REDIS_HOST`, `REDIS_PORT` (set by compose for app/worker)
+- **Redis**: `REDIS_HOST` (set by compose), `REDIS_PORT` (default 6379)
 - **State DB**: `STATE_PG_*` (dev), `STATE_PG_TEST_*` (tests)
 - **GIS DB**: `GIS_PG_*` (must point to a PostGIS DB with required datasets)
 - **Auth (Zitadel)**: `ZITADEL_DOMAIN`, `ZITADEL_CLIENT_ID`, `ZITADEL_CLIENT_SECRET`

@@ -137,6 +137,7 @@ At minimum you must set the GIS connection values:
 Optional tuning:
 
 - `SAQ_WORKERS_COUNT` (worker process count; dev default is 3)
+- `REDIS_PORT` (Redis port for dev/prod Compose; default is 6379)
 
 Safety rails:
 
