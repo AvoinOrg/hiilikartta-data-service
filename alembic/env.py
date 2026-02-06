@@ -5,6 +5,7 @@ import alembic_postgresql_enum
 from alembic import context
 from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
+from sqlalchemy.engine import URL
 
 from app.db.models.base import Base
 from app.db.models.plan import Plan
@@ -32,16 +33,24 @@ def _db_url():
         username = env_vars.get("STATE_PG_TEST_USER")
         password = env_vars.get("STATE_PG_TEST_PASSWORD")
         host = env_vars.get("STATE_PG_TEST_HOST")
-        port = env_vars.get("STATE_PG_TEST_PORT")
+        port = int(env_vars.get("STATE_PG_TEST_PORT", 5432))
         database = env_vars.get("STATE_PG_TEST_DB")
     else:
         username = env_vars["STATE_PG_USER"]
         password = env_vars["STATE_PG_PASSWORD"]
-        host = env_vars.get("STATE_PG_HOST",)
-        port = env_vars.get("STATE_PG_PORT")
+        host = env_vars.get("STATE_PG_HOST")
+        port = int(env_vars.get("STATE_PG_PORT", 5432))
         database = env_vars["STATE_PG_DB"]
 
-    return f"postgresql+psycopg2://{username}:{password}@{host}:{port}/{database}"
+    url = URL.create(
+        "postgresql+psycopg2",
+        username=username,
+        password=password,
+        host=host,
+        port=port,
+        database=database,
+    )
+    return url.render_as_string(hide_password=False)
 
 
 config.set_main_option("sqlalchemy.url", _db_url())

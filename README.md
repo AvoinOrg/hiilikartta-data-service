@@ -181,10 +181,13 @@ docker compose exec app-dev poetry run alembic upgrade head
 
 `docker-compose.prod.yml` runs the API + worker + Redis and is designed to be attached to an existing reverse-proxy network (`proxy-net`) with Traefik.
 
+By default, prod containers refuse to start if the state DB is not at the latest Alembic revision. To run migrations automatically on API startup, set `STATE_DB_MIGRATION_MODE=upgrade` (the worker is check-only and never runs migrations).
+
 Key env vars:
 
 - `DOMAIN` (Traefik host rule)
 - `REDIS_DATA_PATH` (Redis persistence path for prod)
+- `STATE_DB_MIGRATION_MODE` (`check` to refuse start; `upgrade` to run `alembic upgrade head` on API startup)
 
 ## Project structure
 

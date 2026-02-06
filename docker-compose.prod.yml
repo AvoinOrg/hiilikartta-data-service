@@ -26,7 +26,6 @@ services:
   worker-prod:
     build: .
     image: hiilikartta-data-service
-    command: /bin/bash -lc "cd /app && poetry run saq --workers ${SAQ_WORKERS_COUNT:-25} app.saq_worker.settings --web"
     env_file:
       - ./.env
     environment:
@@ -38,6 +37,7 @@ services:
       - ./.cache:/root/.cache
     ports:
       - "127.0.0.1:${SAQ_WEB_PORT}:8080"
+    entrypoint: ["/bin/bash", "/app/docker-entrypoint-worker.prod.sh"]
     networks:
       - proxy-net
     depends_on:
