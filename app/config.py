@@ -40,7 +40,7 @@ class Settings(BaseSettings):
     is_debug = env_vars.get("DEBUG", "false").lower() in ["true", "1", "t", "y", "yes"]
 
     redis_host: str = env_vars["REDIS_HOST"]
-    redis_port: str = env_vars["REDIS_PORT"]
+    redis_port: str = env_vars.get("REDIS_PORT", "6379")
     redis_url: str = f"redis://{redis_host}:{redis_port}/0"
 
     gis_pg_url: URL = URL.create(

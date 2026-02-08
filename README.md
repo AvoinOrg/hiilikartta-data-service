@@ -137,7 +137,6 @@ At minimum you must set the GIS connection values:
 Optional tuning:
 
 - `SAQ_WORKERS_COUNT` (worker process count; dev default is 3)
-- `REDIS_PORT` (Redis port for dev/prod Compose; default is 6379)
 
 Safety rails:
 
@@ -181,11 +180,14 @@ docker compose exec app-dev poetry run alembic upgrade head
 
 `docker-compose.prod.yml` runs the API + worker + Redis and is designed to be attached to an existing reverse-proxy network (`proxy-net`) with Traefik.
 
+To support running multiple stacks on the same Docker host (e.g. `prod` + `test`) without Redis cross-talk, the worker + Redis live on an internal per-stack network (`app-net`), and only the API is attached to `proxy-net`.
+
 By default, prod containers refuse to start if the state DB is not at the latest Alembic revision. To run migrations automatically on API startup, set `STATE_DB_MIGRATION_MODE=upgrade` (the worker is check-only and never runs migrations).
 
 Key env vars:
 
 - `DOMAIN` (Traefik host rule)
+- `APP_PORT` (host port for the API container)
 - `REDIS_DATA_PATH` (Redis persistence path for prod)
 - `STATE_DB_MIGRATION_MODE` (`check` to refuse start; `upgrade` to run `alembic upgrade head` on API startup)
 

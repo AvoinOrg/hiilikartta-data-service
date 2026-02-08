@@ -22,7 +22,7 @@ If you change anything that affects **runtime behavior, configuration, APIs, dat
 Compose files:
 
 - `docker-compose.dev.yml`: dev stack (requires external docker network `climate-map-network`)
-- `docker-compose.prod.yml`: prod-ish stack (expects external `proxy-net` and Traefik labels)
+- `docker-compose.prod.yml`: prod-ish stack (expects external `proxy-net` and Traefik labels; Redis/worker run on an internal per-stack network to avoid cross-talk)
 
 ## Quick start (dev)
 
@@ -75,7 +75,7 @@ Authoritative list: `.env.template`. Highlights:
 
 - **Ports (compose)**: `APP_PORT`, `NOTEBOOK_PORT`, `SAQ_WEB_PORT`
 - **SAQ workers**: `SAQ_WORKERS_COUNT`
-- **Redis**: `REDIS_HOST` (set by compose), `REDIS_PORT` (default 6379)
+- **Redis**: `REDIS_HOST` (set by compose; Redis listens on `6379` inside the Docker network)
 - **State DB**: `STATE_PG_*` (dev), `STATE_PG_TEST_*` (tests)
 - **GIS DB**: `GIS_PG_*` (must point to a PostGIS DB with required datasets)
 - **Auth (Zitadel)**: `ZITADEL_DOMAIN`, `ZITADEL_CLIENT_ID`, `ZITADEL_CLIENT_SECRET`
