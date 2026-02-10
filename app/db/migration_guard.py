@@ -8,7 +8,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 from sqlalchemy.engine import URL
 
 
@@ -58,15 +58,6 @@ def _db_heads(state_db_url: URL) -> Sequence[str]:
     with engine.connect() as conn:
         context = MigrationContext.configure(conn)
         return context.get_current_heads()
-
-
-def _pgcrypto_exists(state_db_url: URL) -> bool:
-    engine = create_engine(state_db_url)
-    with engine.connect() as conn:
-        row = conn.execute(
-            text("SELECT 1 FROM pg_extension WHERE extname='pgcrypto' LIMIT 1;")
-        ).first()
-        return row is not None
 
 
 def _format_heads(heads: Sequence[str]) -> str:
@@ -129,16 +120,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         _explain_pending(role=args.role, db_heads=db_heads, required_heads=required_heads)
         return 1
 
-    if not _pgcrypto_exists(state_db_url):
-        _eprint(
-            f"[{args.role}] The state DB is missing the required Postgres extension pgcrypto "
-            "(needed for gen_random_uuid())."
-        )
-        _eprint(
-            f"[{args.role}] Enable it and retry: CREATE EXTENSION IF NOT EXISTS \"pgcrypto\";"
-        )
-        return 1
-
     try:
         command.upgrade(cfg, "head")
     except Exception as exc:
@@ -162,4 +143,3 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

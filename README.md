@@ -161,16 +161,14 @@ Default URLs (from `.env.template`):
 
 ### State DB migrations (Alembic)
 
-The state DB schema is managed via Alembic (`alembic/`). On a fresh state DB you need:
-
-1. `pgcrypto` (for `gen_random_uuid()`):
+The state DB schema is managed via Alembic (`alembic/`). Migrations will attempt to create the required `pgcrypto` extension (for `gen_random_uuid()`). If your DB role cannot create extensions, enable it once manually:
 
 ```bash
 docker compose exec state-db-dev sh -lc \
   'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "CREATE EXTENSION IF NOT EXISTS \"pgcrypto\";"'
 ```
 
-2. Run migrations:
+Then run migrations:
 
 ```bash
 docker compose exec app-dev poetry run alembic upgrade head

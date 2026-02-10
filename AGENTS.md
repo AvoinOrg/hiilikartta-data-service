@@ -62,7 +62,7 @@ Default URLs:
 - Format: `docker compose exec app-dev poetry run black .`
 - Tests: `docker compose exec app-dev poetry run pytest`
 - Migrations: `docker compose exec app-dev poetry run alembic upgrade head`
-- State DB pgcrypto (fresh DB):
+- State DB pgcrypto (if migrations can't create it):
 
 ```bash
 docker compose exec state-db-dev sh -lc \
