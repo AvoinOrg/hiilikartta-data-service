@@ -9,4 +9,4 @@ RUN apt-get update &&\
     pip install poetry &&\
     printf "  PasswordAuthentication yes\n  KbdInteractiveAuthentication yes" >> /etc/ssh/ssh_config &&\
     sed -i '1,6d' /root/.bashrc &&\
-    echo "poetry shell" >> /root/.bashrc
+    echo "source \"\$(poetry env info --path)/bin/activate\"" >> /root/.bashrc
