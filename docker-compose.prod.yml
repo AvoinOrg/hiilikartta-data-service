@@ -14,13 +14,13 @@ services:
       - ${DATA_PATH}:/data
     entrypoint: ["/bin/bash", "/app/docker-entrypoint.prod.sh"]
     networks:
-      - proxy-net
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.hiilikartta-data-service.rule=Host(`${DOMAIN}`)"
-      - "traefik.http.routers.hiilikartta-data-service.entrypoints=websecure"
-      - "traefik.http.routers.hiilikartta-data-service.tls.certresolver=myresolver"
-      - "traefik.http.services.hiilikartta-data-service.loadbalancer.server.port=80"
+      - app-net
+    # labels:
+    #   - "traefik.enable=true"
+    #   - "traefik.http.routers.hiilikartta-data-service.rule=Host(`${DOMAIN}`)"
+    #   - "traefik.http.routers.hiilikartta-data-service.entrypoints=websecure"
+    #   - "traefik.http.routers.hiilikartta-data-service.tls.certresolver=myresolver"
+    #   - "traefik.http.services.hiilikartta-data-service.loadbalancer.server.port=80"
 
 
   worker:
@@ -37,7 +37,7 @@ services:
     ports:
       - "127.0.0.1:${SAQ_WEB_PORT}:8080"
     networks:
-      - proxy-net
+      - app-net
     depends_on:
       app:
         condition: service_started
@@ -53,7 +53,7 @@ services:
     ports:
       - "127.0.0.1:6379:6379"
     networks:
-      - proxy-net
+      - app-net
 
   pgbouncer-gis:
     image: edoburu/pgbouncer:latest
@@ -70,7 +70,7 @@ services:
       DEFAULT_POOL_SIZE: 20
       SERVER_RESET_QUERY: "DISCARD ALL"
     networks:
-      - proxy-net
+      - app-net
 
   pgbouncer-state:
     image: edoburu/pgbouncer:latest
@@ -87,7 +87,7 @@ services:
       DEFAULT_POOL_SIZE: 20
       SERVER_RESET_QUERY: "DISCARD ALL"
     networks:
-      - proxy-net
+      - app-net
 
   autoheal:
     image: willfarrell/autoheal
@@ -98,8 +98,9 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
     networks:
-      - proxy-net
+      - app-net
 
 networks:
-  proxy-net:
-    external: true
+  app-net:
+#   proxy-net:
+#     external: true
