@@ -17,15 +17,14 @@ services:
     entrypoint: ["/bin/bash", "/app/docker-entrypoint.prod.sh"]
     networks:
       - app-net
-      - proxy-net
-    labels:
-      - "traefik.enable=true"
-      - "traefik.docker.network=proxy-net"
-      - "traefik.http.routers.hiilikartta-${TRAEFIK_STACK}.rule=Host(`${DOMAIN}`)"
-      - "traefik.http.routers.hiilikartta-${TRAEFIK_STACK}.entrypoints=websecure"
-      - "traefik.http.routers.hiilikartta-${TRAEFIK_STACK}.tls.certresolver=myresolver"
-      - "traefik.http.routers.hiilikartta-${TRAEFIK_STACK}.service=hiilikartta-${TRAEFIK_STACK}"
-      - "traefik.http.services.hiilikartta-${TRAEFIK_STACK}.loadbalancer.server.port=80"
+    # labels:
+    #   - "traefik.enable=true"
+    #   - "traefik.docker.network=proxy-net"
+    #   - "traefik.http.routers.hiilikartta-${TRAEFIK_STACK}.rule=Host(`${DOMAIN}`)"
+    #   - "traefik.http.routers.hiilikartta-${TRAEFIK_STACK}.entrypoints=websecure"
+    #   - "traefik.http.routers.hiilikartta-${TRAEFIK_STACK}.tls.certresolver=myresolver"
+    #   - "traefik.http.routers.hiilikartta-${TRAEFIK_STACK}.service=hiilikartta-${TRAEFIK_STACK}"
+    #   - "traefik.http.services.hiilikartta-${TRAEFIK_STACK}.loadbalancer.server.port=80"
 
 
   worker-prod:
@@ -83,12 +82,8 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     restart: unless-stopped
-    networks:
-      - proxy-net
 
 networks:
   app-net:
-  proxy-net:
-    external: true
 volumes:
   state-db-test-data:
