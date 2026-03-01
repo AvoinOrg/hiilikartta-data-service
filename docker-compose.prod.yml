@@ -11,6 +11,7 @@ services:
     volumes:
       - .:/app:z
       - ./.cache:/root/.cache
+      - ${DATA_PATH}:/data
     entrypoint: ["/bin/bash", "/app/docker-entrypoint.prod.sh"]
     networks:
       - proxy-net
@@ -32,6 +33,7 @@ services:
       - ./project:/usr/src/app
       - .:/app:z
       - ./.cache:/root/.cache
+      - ${DATA_PATH}:/data
     ports:
       - "127.0.0.1:${SAQ_WEB_PORT}:8080"
     networks:
