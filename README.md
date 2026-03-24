@@ -29,15 +29,16 @@ The service exposes a FastAPI HTTP API that accepts a zipped vector dataset (pol
 
 Large payload endpoints (`GET /calculation`, `GET /plan`, `GET /plan/external`) return **gzip-compressed** bodies (`Content-Encoding: gzip`). Many HTTP clients handle this automatically; with `curl` use `--compressed`.
 
-- `POST /calculation?id=<uuid>&visible_id=<string>&name=<string>`
+- `POST /calculation?id=<uuid>&visible_id=<string>&name=<string>&forestry_scenario=<1|2|3>`
   - `multipart/form-data` with field `file` (a zipped dataset readable by GeoPandas).
   - Creates/updates a plan and enqueues a background job (`calculate_piece`).
+  - `forestry_scenario` is optional and defaults to `1`.
   - Auth is optional; if a valid token is provided, the plan is associated with that user.
 - `GET /calculation?id=<uuid>`
   - `202` while processing, `200` when finished, `206` if the plan ended in an error state.
-  - When finished: returns `data.totals` and `data.areas` (GeoJSON stored in DB).
+  - Returns the stored `forestry_scenario`; when finished it also returns `data.totals` and `data.areas` (GeoJSON stored in DB).
 - `GET /plan/external?id=<uuid>`
-  - Public “share” endpoint: returns `{id, name, report_data?}`.
+  - Public “share” endpoint: returns `{id, name, forestry_scenario, report_data?}`.
 
 Authenticated (Zitadel) endpoints:
 
@@ -60,23 +61,24 @@ Example (dev):
 PLAN_ID=$(python -c 'import uuid; print(uuid.uuid4())')
 
 curl --compressed -F "file=@tests/data/test-data-small-polygon.zip" \
-  "http://localhost:8000/calculation?id=$PLAN_ID&visible_id=demo&name=Demo"
+  "http://localhost:8000/calculation?id=$PLAN_ID&visible_id=demo&name=Demo&forestry_scenario=1"
 
 curl --compressed "http://localhost:8000/calculation?id=$PLAN_ID"
 ```
 
 ## Calculation model
 
-The current implementation is documented in `documentation/calculation.md` (“new model”). In short, for each polygon the calculator produces:
+The latest implementation is documented in `documentation/calculation_2026_03.md`. Historical snapshots are in `documentation/calculation_2025.md` and `documentation/calculation_2024.md`. In short, for each polygon the calculator produces:
 
 - vegetation + soil **base stocks** from PostGIS rasters (converted from tC/ha to tCO2),
-- future **deltas on existing land** from segment variables + curve series,
+- future **deltas on existing land** from segment variables + final curve tables keyed by `Scen`,
 - future **deltas on changed land** from annual sequestration coefficients (CSV),
-- outputs for `nochange` vs `planned` scenarios for `current_year` and 2030..2095 (5y steps).
+- outputs for `nochange` vs `planned` scenarios for `current_year` and 2030..2095 (5y steps),
+- the stored plan-level `forestry_scenario` in frontend-facing responses.
 
 ### Input expectations (high level)
 
-From `documentation/calculation.md`:
+From `documentation/calculation_2026_03.md`:
 
 - `geometry`: polygon/multipolygon (input assumed EPSG:4326; reprojected for area math)
 - `zoning_code`: land-use code used for coefficient lookup
@@ -84,7 +86,7 @@ From `documentation/calculation.md`:
 
 ### Data inputs
 
-GIS DB (PostGIS) tables/rasters (see `documentation/calculation.md` for details):
+GIS DB (PostGIS) tables/rasters (see `documentation/calculation_2026_03.md` for details):
 
 - `hiilikartta_kasvillisuudenhiili_2021_tcha`
 - `hiilikartta_maaperanhiili_2023_tcha`
@@ -94,8 +96,8 @@ GIS DB (PostGIS) tables/rasters (see `documentation/calculation.md` for details)
 
 Repo data files (loaded on API startup via `app/utils/data_loader.py`):
 
-- `data/BiomassCurves.txt`
-- `data/SoilCurves.txt`
+- `data/Hiilikartta_Veg.csv`
+- `data/Hiilikartta_Soil.csv`
 - `data/aluekertoimet.csv`
 - `data/Hiilikartta_Kasvillisuuden_ja_maaperan_hiilensidonta_kayttotarkoitusluokittain.csv`
 
@@ -199,7 +201,9 @@ Key env vars:
   - `app/auth/`: Zitadel token introspection
 - `alembic/`: Alembic migrations for the state DB
 - `data/`: lookup tables + curve inputs used by the calculator
-- `documentation/calculation.md`: authoritative calculation spec
+- `documentation/calculation_2026_03.md`: authoritative latest calculation spec
+- `documentation/calculation_2025.md`: 2025 calculation snapshot
+- `documentation/calculation_2024.md`: legacy calculation snapshot
 - `docker-compose.*.yml`, `docker-entrypoint*.sh`: local/prod wiring
 - `tests/`: integration/smoke tests
 - `sql/`: reference SQL snippets (not the migration source of truth)

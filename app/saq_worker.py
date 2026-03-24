@@ -44,7 +44,7 @@ async def calculate(ctx, *, ui_id: str):
     calc_data = None
     if plan:
         try:
-            cc = CarbonCalculator(plan.data)
+            cc = CarbonCalculator(plan.data, forestry_scenario=plan.forestry_scenario)
             calc_data = await cc.calculate()
         except GisRetryLaterError as exc:
             await queue.enqueue(
@@ -107,7 +107,11 @@ async def calculate_piece(ctx, *, ui_id: str):
                     return
 
                 try:
-                    cc = CarbonCalculator(plan_report.report_areas, sort_col="none")
+                    cc = CarbonCalculator(
+                        plan_report.report_areas,
+                        sort_col="none",
+                        forestry_scenario=plan.forestry_scenario,
+                    )
                     calc_data = await cc.calculate_totals()
                 except Exception as exc:
                     plan.last_area_calculation_retries += 1
@@ -152,7 +156,10 @@ async def calculate_piece(ctx, *, ui_id: str):
             break
 
     try:
-        cc = CarbonCalculator({"type": "FeatureCollection", "features": [feature]})
+        cc = CarbonCalculator(
+            {"type": "FeatureCollection", "features": [feature]},
+            forestry_scenario=plan.forestry_scenario,
+        )
         calc_data = await cc.calculate()
     except GisRetryLaterError as exc:
         await _enqueue_next(delay_seconds=exc.retry_in_seconds)

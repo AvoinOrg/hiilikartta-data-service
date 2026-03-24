@@ -4,6 +4,7 @@ from sqlalchemy.orm import sessionmaker
 import pytest_asyncio
 import asyncio
 from app.db.gis import (
+    fetch_weighted_raster_sum_ha_by_segment_for_regions,
     fetch_variables_for_ids,
     fetch_rasters_for_regions,
     fetch_bio_carbon_for_regions,
@@ -52,6 +53,18 @@ async def test_fetch_bio_carbon_for_regions():
 async def test_fetch_ground_carbon_for_regions():
     async with get_async_context_gis_db() as session:
         result = await fetch_ground_carbon_for_regions([TEST_WKT, TEST_WKT], TEST_CRS, session)
+        assert result is not None
+
+
+@pytest.mark.asyncio
+async def test_fetch_weighted_raster_sum_ha_by_segment_for_regions():
+    async with get_async_context_gis_db() as session:
+        result = await fetch_weighted_raster_sum_ha_by_segment_for_regions(
+            "hiilikartta_kasvillisuudenhiili_2021_tcha",
+            [TEST_WKT, TEST_WKT],
+            TEST_CRS,
+            session,
+        )
         assert result is not None
 
 

@@ -36,11 +36,14 @@ from app.db.plan import (
 from app.db.models.plan import Plan
 from app.utils.logger import get_logger
 from app.utils.data_loader import (
+    DEFAULT_FORESTRY_SCENARIO,
+    get_available_forestry_scenarios,
     load_area_multipliers,
     load_bm_curves,
     load_landuse_sequestration,
     load_soil_curves,
     unload_files,
+    validate_forestry_scenario,
 )
 from app.saq_worker import queue
 from app.auth.validator import ZitadelIntrospectTokenValidator, ValidatorError
@@ -56,6 +59,7 @@ async def lifespan(app: FastAPI):
     load_area_multipliers()
     load_bm_curves()
     load_soil_curves()
+    get_available_forestry_scenarios()
     load_landuse_sequestration()
 
     yield
@@ -113,7 +117,39 @@ async def get_current_user_optional(token: str = Security(oauth2_scheme_optional
         return None
 
 
-def process_and_create_plan(file, ui_id, visible_ui_id, name, user_id=None, plan=None):
+def _parse_forestry_scenario(
+    raw_value: Any, default: int = DEFAULT_FORESTRY_SCENARIO
+) -> int:
+    if raw_value in (None, ""):
+        return default
+
+    try:
+        forestry_scenario = int(raw_value)
+    except (TypeError, ValueError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="forestry_scenario must be an integer.",
+        )
+
+    try:
+        return validate_forestry_scenario(forestry_scenario)
+    except ValueError:
+        valid_scenarios = get_available_forestry_scenarios()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"forestry_scenario must be one of {valid_scenarios}.",
+        )
+
+
+def process_and_create_plan(
+    file,
+    ui_id,
+    visible_ui_id,
+    name,
+    forestry_scenario,
+    user_id=None,
+    plan=None,
+):
     # Use a temporary file to process the data
     temp_file_path = None
     with tempfile.NamedTemporaryFile(
@@ -146,6 +182,7 @@ def process_and_create_plan(file, ui_id, visible_ui_id, name, user_id=None, plan
             plan.data = data
             plan.total_indices = total_indices
             plan.saved_ts = datetime.datetime.utcnow()
+            plan.forestry_scenario = forestry_scenario
 
             if plan.user_id is None and user_id:
                 plan.user_id = user_id
@@ -168,6 +205,7 @@ def process_and_create_plan(file, ui_id, visible_ui_id, name, user_id=None, plan
                 last_area_calculation_status=None,
                 saved_ts=datetime.datetime.now(),
                 user_id=user_id,
+                forestry_scenario=forestry_scenario,
             )
 
             return new_plan
@@ -212,6 +250,11 @@ async def calculate(
             detail="Name parameter is missing.",
         )
 
+    forestry_scenario = _parse_forestry_scenario(
+        request.query_params.get("forestry_scenario"),
+        default=DEFAULT_FORESTRY_SCENARIO,
+    )
+
     plan = await get_plan_without_data_by_ui_id(state_db_session, ui_id)
 
     if plan and plan.calculation_status.value == CalculationStatus.PROCESSING.value:
@@ -223,7 +266,14 @@ async def calculate(
     is_new_plan = plan is None
 
     if plan:
-        plan = process_and_create_plan(file, ui_id, visible_ui_id, name, plan=plan)
+        plan = process_and_create_plan(
+            file,
+            ui_id,
+            visible_ui_id,
+            name,
+            forestry_scenario,
+            plan=plan,
+        )
         plan.calculation_status = CalculationStatus.PROCESSING
         plan.last_index = -1
         plan.last_area_calculation_retries = 0
@@ -238,7 +288,14 @@ async def calculate(
         user_id = None
         if current_user:
             user_id = current_user.get("user_id")
-        plan = process_and_create_plan(file, ui_id, visible_ui_id, name, user_id)
+        plan = process_and_create_plan(
+            file,
+            ui_id,
+            visible_ui_id,
+            name,
+            forestry_scenario,
+            user_id,
+        )
         plan.calculation_status = CalculationStatus.PROCESSING
 
         await create_plan(
@@ -259,6 +316,7 @@ async def calculate(
         "id": ui_id,
         "user_id": plan.user_id,
         "saved_ts": plan.saved_ts.timestamp(),
+        "forestry_scenario": plan.forestry_scenario,
     }
 
 
@@ -292,6 +350,7 @@ async def get_calculation_status(
         ),
         "total_indices": plan.total_indices,
         "last_index": plan.last_index,
+        "forestry_scenario": plan.forestry_scenario,
     }
 
     if plan.calculation_status.value == CalculationStatus.PROCESSING.value:
@@ -317,6 +376,7 @@ async def get_calculation_status(
                 "calculated_ts": (
                     int(plan.calculated_ts.timestamp()) if plan.calculated_ts else None
                 ),
+                "forestry_scenario": plan.forestry_scenario,
             },
         }
         return Response(
@@ -354,6 +414,7 @@ async def get_plan_external(
     content: Dict[str, Any] = {
         "id": str(ui_id),
         "name": plan.name,
+        "forestry_scenario": plan.forestry_scenario,
     }
 
     if plan.calculation_status.value == CalculationStatus.FINISHED.value:
@@ -364,6 +425,7 @@ async def get_plan_external(
                 "calculated_ts": (
                     int(plan.calculated_ts.timestamp()) if plan.calculated_ts else None
                 ),
+                "forestry_scenario": plan.forestry_scenario,
             },
         }
 
@@ -415,7 +477,14 @@ async def create_update_plan(
     plan = await get_plan_without_data_by_ui_id(state_db_session, ui_id)
 
     if plan:
-        plan = process_and_create_plan(file, ui_id, visible_ui_id, name, plan=plan)
+        plan = process_and_create_plan(
+            file,
+            ui_id,
+            visible_ui_id,
+            name,
+            plan.forestry_scenario,
+            plan=plan,
+        )
 
         await update_plan(state_db_session, plan)
 
@@ -424,11 +493,19 @@ async def create_update_plan(
                 "id": str(ui_id),
                 "user_id": user_id,
                 "saved_ts": plan.saved_ts.timestamp(),
+                "forestry_scenario": plan.forestry_scenario,
             },
             status_code=status.HTTP_200_OK,
         )
     else:
-        new_plan = process_and_create_plan(file, ui_id, visible_ui_id, name, user_id)
+        new_plan = process_and_create_plan(
+            file,
+            ui_id,
+            visible_ui_id,
+            name,
+            DEFAULT_FORESTRY_SCENARIO,
+            user_id,
+        )
 
         await create_plan(
             state_db_session, new_plan
@@ -439,6 +516,7 @@ async def create_update_plan(
                 "id": str(ui_id),
                 "user_id": user_id,
                 "saved_ts": new_plan.saved_ts.timestamp(),
+                "forestry_scenario": new_plan.forestry_scenario,
             },
             status_code=status.HTTP_201_CREATED,
         )
@@ -490,6 +568,7 @@ async def get_plan(
         "user_id": plan.user_id,
         "saved_ts": plan.saved_ts.timestamp(),
         "created_ts": plan.created_ts.timestamp(),
+        "forestry_scenario": plan.forestry_scenario,
         "calculation_status": plan.calculation_status.value,
         "calculation_updated_ts": (
             plan.calculation_updated_ts.timestamp()
@@ -508,6 +587,7 @@ async def get_plan(
                 "calculated_ts": (
                     int(plan.calculated_ts.timestamp()) if plan.calculated_ts else None
                 ),
+                "forestry_scenario": plan.forestry_scenario,
             },
         }
 

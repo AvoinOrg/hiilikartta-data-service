@@ -1,4 +1,5 @@
 import datetime
+
 # from shapely.geometry import box
 # import numpy as np
 # import pandas as pd
@@ -13,17 +14,15 @@ current_year = datetime.datetime.now().year
 year_offset = current_year - variables_base_year
 keys_to_use = set(
     [
+        "Scen",
         "Region",
         "Maingroup",
         "Soiltype",
         "Drainage",
         "Fertility",
         "Species",
-        "Structure",
-        "Regime",
     ]
 )
-biomass_to_carbon_multiplier = 0.5
 
 
 # Unused (excluding notebooks): legacy client-side raster processing helpers.

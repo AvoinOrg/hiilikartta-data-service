@@ -1,15 +1,13 @@
 # import asyncio
 # import tempfile
-import pandas as pd
-# import rioxarray as rxr
-import geopandas as gpd
-# import xarray as xr
-# import numpy as np
-import math
+from bisect import bisect_right
 from datetime import datetime
-from typing import Any, Dict, TypedDict, List, Optional, Tuple
-# import json
+import math
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple, TypedDict
 from warnings import simplefilter
+
+import geopandas as gpd
+import pandas as pd
 
 from app.db.gis import (
     fetch_natcode_for_regions,
@@ -18,9 +16,11 @@ from app.db.gis import (
     fetch_weighted_raster_sum_ha_for_regions,
 )
 from app.utils.data_loader import (
+    DEFAULT_FORESTRY_SCENARIO,
     get_bm_curve_df,
     get_landuse_sequestration_df,
     get_soil_curve_df,
+    validate_forestry_scenario,
 )
 from app.utils.logger import get_logger
 
@@ -67,15 +67,13 @@ SEQUESTRATION_COL_SOIL_TREE = (
 )
 
 POWERLINE_ZONING_CODES = {"ENsl", "ENslja"}
-# The intended special Maingroup for powerline biomass curves is 4, but it is not
-# present in BiomassCurves.txt yet. Use a placeholder value for now.
-POWERLINE_BIOMASS_MAINGROUP = 1
+POWERLINE_BIOMASS_MAINGROUP = 4
 
 
 class CalculationResult(TypedDict):
     areas: gpd.GeoDataFrame
     totals: gpd.GeoDataFrame
-    metadata: Dict[str, str]
+    metadata: Dict[str, Any]
 
 
 def _coerce_float(value: Any) -> Optional[float]:
@@ -147,162 +145,204 @@ def _validate_landuse_percentages(
     )
 
 
-_BM_CURVE_SERIES_CACHE: Optional[
-    Tuple[
-        int,
-        Dict[Tuple[int, ...], List[float]],
-        Dict[Tuple[int, ...], List[float]],
-    ]
-] = None
+CurveKey = Tuple[int, int, int, int, int, int, int]
 
 
-def _get_bm_curve_series_by_key(
-    bm_curves_df: pd.DataFrame,
-) -> Tuple[int, Dict[Tuple[int, ...], List[float]], Dict[Tuple[int, ...], List[float]]]:
-    """
-    Build (and cache) a mapping from categorical variables to the biomass curve's
-    yearly series (year1..yearN).
-
-    Returns:
-      - max_year: maximum year index available (N)
-      - by_key_rotation: key includes Rotation
-      - by_key_no_rotation: key excludes Rotation (fallback)
-    """
-    global _BM_CURVE_SERIES_CACHE
-    if _BM_CURVE_SERIES_CACHE is not None:
-        return _BM_CURVE_SERIES_CACHE
-
-    key_cols_with_rotation = [
-        "Region",
-        "Maingroup",
-        "Soiltype",
-        "Drainage",
-        "Fertility",
-        "Species",
-        "Structure",
-        "Regime",
-        "Rotation",
-    ]
-    key_cols_no_rotation = key_cols_with_rotation[:-1]
-
-    def _year_col_num(col: str) -> int:
-        try:
-            return int(col.replace("year", ""))
-        except Exception:
-            return -1
-
-    year_cols = [col for col in bm_curves_df.columns if col.startswith("year")]
-    year_cols.sort(key=_year_col_num)
-    max_year = _year_col_num(year_cols[-1]) if year_cols else 0
-
-    by_key_rotation: Dict[Tuple[int, ...], List[float]] = {}
-    by_key_no_rotation: Dict[Tuple[int, ...], List[float]] = {}
-
-    for _, row in bm_curves_df.iterrows():
-        try:
-            key_rot = tuple(int(row[col]) for col in key_cols_with_rotation)
-            key_no_rot = tuple(int(row[col]) for col in key_cols_no_rotation)
-        except Exception:
-            continue
-
-        series = []
-        for col in year_cols:
-            value = _coerce_float(row[col])
-            series.append(0.0 if value is None else float(value))
-
-        if key_rot not in by_key_rotation:
-            by_key_rotation[key_rot] = series
-        if key_no_rot not in by_key_no_rotation:
-            by_key_no_rotation[key_no_rot] = series
-
-    _BM_CURVE_SERIES_CACHE = (max_year, by_key_rotation, by_key_no_rotation)
-    return _BM_CURVE_SERIES_CACHE
+class CurveInfo(NamedTuple):
+    series: List[float]
+    max_carbon: Optional[float]
 
 
-_SOIL_CURVE_SERIES_CACHE: Optional[
-    Tuple[
-        int,
-        Dict[Tuple[int, ...], List[float]],
-        Dict[Tuple[int, ...], List[float]],
-    ]
-] = None
+_CURVE_TABLE_CACHE: Dict[
+    Tuple[str, int],
+    Tuple[int, Dict[CurveKey, Dict[int, CurveInfo]], Dict[CurveKey, List[int]]],
+] = {}
 
 
-def _get_soil_curve_series_by_key(
-    soil_curves_df: pd.DataFrame,
-) -> Tuple[int, Dict[Tuple[int, ...], List[float]], Dict[Tuple[int, ...], List[float]]]:
-    """
-    Build (and cache) a mapping from categorical variables to the soil curve's
-    yearly series (year1..yearN).
-
-    Returns:
-      - max_year: maximum year index available (N)
-      - by_key_rotation: key includes Rotation
-      - by_key_no_rotation: key excludes Rotation (fallback)
-    """
-    global _SOIL_CURVE_SERIES_CACHE
-    if _SOIL_CURVE_SERIES_CACHE is not None:
-        return _SOIL_CURVE_SERIES_CACHE
-
-    key_cols_with_rotation = [
-        "Region",
-        "Maingroup",
-        "Soiltype",
-        "Drainage",
-        "Fertility",
-        "Species",
-        "Structure",
-        "Regime",
-        "Rotation",
-    ]
-    key_cols_no_rotation = key_cols_with_rotation[:-1]
-
-    def _year_col_num(col: str) -> int:
-        try:
-            return int(col.replace("year", ""))
-        except Exception:
-            return -1
-
-    year_cols = [col for col in soil_curves_df.columns if col.startswith("year")]
-    year_cols.sort(key=_year_col_num)
-    max_year = _year_col_num(year_cols[-1]) if year_cols else 0
-
-    by_key_rotation: Dict[Tuple[int, ...], List[float]] = {}
-    by_key_no_rotation: Dict[Tuple[int, ...], List[float]] = {}
-
-    for _, row in soil_curves_df.iterrows():
-        try:
-            key_rot = tuple(int(row[col]) for col in key_cols_with_rotation)
-            key_no_rot = tuple(int(row[col]) for col in key_cols_no_rotation)
-        except Exception:
-            continue
-
-        series = []
-        for col in year_cols:
-            value = _coerce_float(row[col])
-            series.append(0.0 if value is None else float(value))
-
-        if key_rot not in by_key_rotation:
-            by_key_rotation[key_rot] = series
-        if key_no_rot not in by_key_no_rotation:
-            by_key_no_rotation[key_no_rot] = series
-
-    _SOIL_CURVE_SERIES_CACHE = (max_year, by_key_rotation, by_key_no_rotation)
-    return _SOIL_CURVE_SERIES_CACHE
+def _year_col_num(col: str) -> int:
+    try:
+        return int(col.replace("year", ""))
+    except Exception:
+        return -1
 
 
-def _bm_curve_value_at_age(series: List[float], age_years: int) -> float:
+def _curve_value_at_offset(series: List[float], offset_years: int) -> float:
     if not series:
         return 0.0
-    if age_years <= 0:
-        return series[0]
-    if age_years > len(series):
-        return series[-1]
-    return series[age_years - 1]
+    clamped_offset = max(0, min(int(offset_years), len(series) - 1))
+    return float(series[clamped_offset])
+
+
+def _relative_curve_offset(
+    age_base: int, init_age: int, year: int, variables_base_year: int
+) -> int:
+    return int(age_base) + (int(year) - int(variables_base_year)) - int(init_age)
+
+
+def _get_int_var(variables: Dict[str, Any], candidates: List[str]) -> Optional[int]:
+    for key in candidates:
+        if key in variables and variables[key] is not None:
+            try:
+                return int(variables[key])
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
+def _get_float_var(variables: Dict[str, Any], candidates: List[str]) -> Optional[float]:
+    for key in candidates:
+        if key in variables and variables[key] is not None:
+            value = _coerce_float(variables[key])
+            if value is not None:
+                return float(value)
+    return None
+
+
+def _get_curve_key(
+    variables: Dict[str, Any],
+    forestry_scenario: int,
+    *,
+    maingroup_override: Optional[int] = None,
+) -> Optional[CurveKey]:
+    region = _get_int_var(variables, ["Region", "region"])
+    maingroup = maingroup_override
+    if maingroup is None:
+        maingroup = _get_int_var(variables, ["Maingroup", "maingroup"])
+    soiltype = _get_int_var(variables, ["Soiltype", "soiltype"])
+    drainage = _get_int_var(variables, ["Drainage", "drainage"])
+    fertility = _get_int_var(variables, ["Fertility", "fertility"])
+    species = _get_int_var(variables, ["Species", "species"])
+
+    if None in (region, maingroup, soiltype, drainage, fertility, species):
+        return None
+
+    return (
+        int(forestry_scenario),
+        int(region),
+        int(maingroup),
+        int(soiltype),
+        int(drainage),
+        int(fertility),
+        int(species),
+    )
+
+
+def _select_init_age_bucket(age: int, init_ages: List[int]) -> Optional[int]:
+    if not init_ages:
+        return None
+
+    age_int = int(age)
+    idx = bisect_right(init_ages, age_int) - 1
+    if idx < 0:
+        return init_ages[0]
+    return init_ages[idx]
+
+
+def _build_curve_tables(
+    curves_df: pd.DataFrame, *, cache_name: str, include_max_carbon: bool
+) -> Tuple[int, Dict[CurveKey, Dict[int, CurveInfo]], Dict[CurveKey, List[int]]]:
+    cache_key = (cache_name, id(curves_df))
+    if cache_key in _CURVE_TABLE_CACHE:
+        return _CURVE_TABLE_CACHE[cache_key]
+
+    year_cols = [col for col in curves_df.columns if col.startswith("year")]
+    year_cols.sort(key=_year_col_num)
+    max_year = _year_col_num(year_cols[-1]) if year_cols else 0
+
+    curves_by_key: Dict[CurveKey, Dict[int, CurveInfo]] = {}
+    init_ages_by_key: Dict[CurveKey, List[int]] = {}
+
+    key_cols = [
+        "Scen",
+        "Region",
+        "Maingroup",
+        "Soiltype",
+        "Drainage",
+        "Fertility",
+        "Species",
+    ]
+
+    for _, row in curves_df.iterrows():
+        try:
+            key = tuple(int(row[col]) for col in key_cols)
+            init_age = int(row["InitAge"])
+        except Exception:
+            continue
+
+        series = []
+        for col in year_cols:
+            value = _coerce_float(row.get(col))
+            series.append(0.0 if value is None else float(value))
+
+        max_carbon = None
+        if include_max_carbon:
+            max_carbon = _coerce_float(row.get("MaxCarbon"))
+
+        if key not in curves_by_key:
+            curves_by_key[key] = {}
+        if init_age not in curves_by_key[key]:
+            curves_by_key[key][init_age] = CurveInfo(
+                series=series, max_carbon=max_carbon
+            )
+
+    for key, info_by_age in curves_by_key.items():
+        init_ages_by_key[key] = sorted(info_by_age.keys())
+
+    _CURVE_TABLE_CACHE[cache_key] = (max_year, curves_by_key, init_ages_by_key)
+    return _CURVE_TABLE_CACHE[cache_key]
+
+
+def _match_curve_info(
+    curves_by_key: Dict[CurveKey, Dict[int, CurveInfo]],
+    init_ages_by_key: Dict[CurveKey, List[int]],
+    key: CurveKey,
+    age: int,
+) -> Optional[Tuple[int, CurveInfo]]:
+    init_age_bucket = _select_init_age_bucket(age, init_ages_by_key.get(key, []))
+    if init_age_bucket is None:
+        return None
+    curve_info = curves_by_key.get(key, {}).get(init_age_bucket)
+    if curve_info is None:
+        return None
+    return init_age_bucket, curve_info
+
+
+def _should_use_cut_curve(
+    segment_carbon: Optional[float],
+    curve_info: CurveInfo,
+    expected_curve_value: float,
+) -> bool:
+    if segment_carbon is None or curve_info.max_carbon is None:
+        return False
+    return float(segment_carbon) >= (2.0 / 3.0) * float(
+        curve_info.max_carbon
+    ) and float(segment_carbon) >= 3.0 * float(expected_curve_value)
+
+
+def _switch_match_to_zero_curve(
+    match: Optional[Tuple[int, CurveInfo]],
+    curves_by_key: Dict[CurveKey, Dict[int, CurveInfo]],
+    key: CurveKey,
+    *,
+    enabled: bool,
+) -> Optional[Tuple[int, CurveInfo]]:
+    if not enabled:
+        return match
+
+    zero_curve = curves_by_key.get(key, {}).get(0)
+    if zero_curve is None:
+        return match
+
+    return (0, zero_curve)
 
 
 class CarbonCalculator:
-    def __init__(self, data, sort_col="id"):
+    def __init__(
+        self,
+        data,
+        sort_col="id",
+        forestry_scenario: int = DEFAULT_FORESTRY_SCENARIO,
+    ):
         zone = gpd.GeoDataFrame.from_features(data["features"])
         if sort_col and sort_col in zone.columns:
             zone = zone.sort_values(by=sort_col)
@@ -330,8 +370,11 @@ class CarbonCalculator:
         # if not self.simplify_calcs:
         #     zone["buffered_geometry"] = zone.geometry.buffer(16)
 
+        scenario = validate_forestry_scenario(forestry_scenario)
+
         self.zone: gpd.GeoDataFrame = zone
         self.zone_raster = None
+        self.forestry_scenario = scenario
 
     # def rasterize_zone(self):
     #     if self.zone_raster != None:
@@ -505,7 +548,10 @@ class CarbonCalculator:
 
         return {
             "totals": summed_gdf.to_crs(epsg=4326).to_json(),
-            "metadata": {"timestamp": datetime.utcnow()},
+            "metadata": {
+                "timestamp": datetime.utcnow(),
+                "forestry_scenario": self.forestry_scenario,
+            },
         }
 
     async def calculate(self) -> CalculationResult:
@@ -528,7 +574,11 @@ class CarbonCalculator:
                     LANDUSE_NEW_TREE_VEG_COL,
                     LANDUSE_EXISTING_COL,
                 ]
-                + [alias for aliases in LANDUSE_ALIAS_COLS.values() for alias in aliases]
+                + [
+                    alias
+                    for aliases in LANDUSE_ALIAS_COLS.values()
+                    for alias in aliases
+                ]
             )
         )
 
@@ -540,12 +590,18 @@ class CarbonCalculator:
 
         for _, row in self.zone.iterrows():
             if has_any_landuse_cols:
-                built = _get_pct_value(row, LANDUSE_BUILT_COL, LANDUSE_ALIAS_COLS[LANDUSE_BUILT_COL])
+                built = _get_pct_value(
+                    row, LANDUSE_BUILT_COL, LANDUSE_ALIAS_COLS[LANDUSE_BUILT_COL]
+                )
                 new_open = _get_pct_value(
-                    row, LANDUSE_NEW_OPEN_VEG_COL, LANDUSE_ALIAS_COLS[LANDUSE_NEW_OPEN_VEG_COL]
+                    row,
+                    LANDUSE_NEW_OPEN_VEG_COL,
+                    LANDUSE_ALIAS_COLS[LANDUSE_NEW_OPEN_VEG_COL],
                 )
                 new_tree = _get_pct_value(
-                    row, LANDUSE_NEW_TREE_VEG_COL, LANDUSE_ALIAS_COLS[LANDUSE_NEW_TREE_VEG_COL]
+                    row,
+                    LANDUSE_NEW_TREE_VEG_COL,
+                    LANDUSE_ALIAS_COLS[LANDUSE_NEW_TREE_VEG_COL],
                 )
                 existing = _get_pct_value(
                     row, LANDUSE_EXISTING_COL, LANDUSE_ALIAS_COLS[LANDUSE_EXISTING_COL]
@@ -655,7 +711,9 @@ class CarbonCalculator:
         calcs_df.set_geometry("geometry", inplace=True)
 
         current_year = datetime.now().year
-        years_int = [current_year] + list(range(2030, 2100, 5))
+        years_int = [current_year] + [
+            year for year in range(2030, 2100, 5) if year > current_year
+        ]
 
         base_bio_co2 = [
             bio_sum_by_order.get(order_num, 0.0) * c_to_co2
@@ -705,10 +763,18 @@ class CarbonCalculator:
                     coeff_row = sequestration_df.loc[key]
                     if isinstance(coeff_row, pd.DataFrame):
                         coeff_row = coeff_row.iloc[0]
-                    k_veg_open = _coerce_float(coeff_row.get(SEQUESTRATION_COL_VEG_OPEN))
-                    k_veg_tree = _coerce_float(coeff_row.get(SEQUESTRATION_COL_VEG_TREE))
-                    k_soil_open = _coerce_float(coeff_row.get(SEQUESTRATION_COL_SOIL_OPEN))
-                    k_soil_tree = _coerce_float(coeff_row.get(SEQUESTRATION_COL_SOIL_TREE))
+                    k_veg_open = _coerce_float(
+                        coeff_row.get(SEQUESTRATION_COL_VEG_OPEN)
+                    )
+                    k_veg_tree = _coerce_float(
+                        coeff_row.get(SEQUESTRATION_COL_VEG_TREE)
+                    )
+                    k_soil_open = _coerce_float(
+                        coeff_row.get(SEQUESTRATION_COL_SOIL_OPEN)
+                    )
+                    k_soil_tree = _coerce_float(
+                        coeff_row.get(SEQUESTRATION_COL_SOIL_TREE)
+                    )
 
                     k_veg_open = 0.0 if k_veg_open is None else float(k_veg_open)
                     k_veg_tree = 0.0 if k_veg_tree is None else float(k_veg_tree)
@@ -739,11 +805,16 @@ class CarbonCalculator:
             soil_changed_rate_co2_per_year.append(float(soil_rate))
 
         variables_base_year = 2021
-        max_year, curve_by_key_rot, curve_by_key_no_rot = _get_bm_curve_series_by_key(
-            bm_curves_df
+        soil_raster_base_year = 2023
+        _, biomass_curves_by_key, biomass_init_ages_by_key = _build_curve_tables(
+            bm_curves_df,
+            cache_name="biomass",
+            include_max_carbon=True,
         )
-        soil_max_year, soil_curve_by_key_rot, soil_curve_by_key_no_rot = (
-            _get_soil_curve_series_by_key(soil_curves_df)
+        _, soil_curves_by_key, soil_init_ages_by_key = _build_curve_tables(
+            soil_curves_df,
+            cache_name="soil",
+            include_max_carbon=False,
         )
 
         veg_curve_delta_co2_by_order: Dict[int, Dict[int, float]] = {
@@ -769,27 +840,6 @@ class CarbonCalculator:
             for order_num in range(1, area_count + 1)
         }
 
-        curve_key_cols_no_rotation = [
-            "Region",
-            "Maingroup",
-            "Soiltype",
-            "Drainage",
-            "Fertility",
-            "Species",
-            "Structure",
-            "Regime",
-        ]
-        curve_key_cols_with_rotation = curve_key_cols_no_rotation + ["Rotation"]
-
-        def _get_int_var(variables: Dict[str, Any], candidates: List[str]) -> Optional[int]:
-            for key in candidates:
-                if key in variables and variables[key] is not None:
-                    try:
-                        return int(variables[key])
-                    except (TypeError, ValueError):
-                        continue
-            return None
-
         for order_num, segment_areas in segment_areas_by_order.items():
             for segment_id, segment_area_ha in segment_areas.items():
                 variables = variables_dict.get(segment_id)
@@ -800,100 +850,127 @@ class CarbonCalculator:
                 if age_base is None:
                     continue
 
-                key_no_rot: Optional[Tuple[int, ...]] = None
-                key_rot: Optional[Tuple[int, ...]] = None
+                curve_key = _get_curve_key(variables, self.forestry_scenario)
+                if curve_key is None:
+                    continue
 
-                try:
-                    key_no_rot = tuple(int(variables[col]) for col in curve_key_cols_no_rotation)
-                except Exception:
-                    key_no_rot = None
+                biomass_match = _match_curve_info(
+                    biomass_curves_by_key, biomass_init_ages_by_key, curve_key, age_base
+                )
+                use_cut_zero_curve = False
+                if biomass_match is not None:
+                    selected_init_age, curve_info = biomass_match
 
-                rotation = _get_int_var(variables, ["Rotation", "rotation"])
-                if key_no_rot is not None and rotation is not None:
-                    key_rot = tuple(list(key_no_rot) + [int(rotation)])
+                    if self.forestry_scenario == 1:
+                        segment_carbon = _get_float_var(variables, ["Carbon", "carbon"])
+                        expected_curve_value = _curve_value_at_offset(
+                            curve_info.series,
+                            _relative_curve_offset(
+                                age_base,
+                                selected_init_age,
+                                variables_base_year,
+                                variables_base_year,
+                            ),
+                        )
+                        use_cut_zero_curve = _should_use_cut_curve(
+                            segment_carbon,
+                            curve_info,
+                            expected_curve_value,
+                        )
+                        biomass_match = _switch_match_to_zero_curve(
+                            biomass_match,
+                            biomass_curves_by_key,
+                            curve_key,
+                            enabled=use_cut_zero_curve,
+                        )
+                        selected_init_age, curve_info = biomass_match
 
-                series = None
-                if key_rot is not None:
-                    series = curve_by_key_rot.get(key_rot)
-                if series is None and key_no_rot is not None:
-                    series = curve_by_key_no_rot.get(key_no_rot)
-                if series is not None:
-                    age_base_at_raster_year = max(0, min(age_base, max_year))
-                    value_base = _bm_curve_value_at_age(series, age_base_at_raster_year)
-
+                    value_base = _curve_value_at_offset(
+                        curve_info.series,
+                        _relative_curve_offset(
+                            age_base,
+                            selected_init_age,
+                            variables_base_year,
+                            variables_base_year,
+                        ),
+                    )
                     for year in years_int:
-                        age_year = age_base + (year - variables_base_year)
-                        age_year = max(0, min(age_year, max_year))
-                        value_year = _bm_curve_value_at_age(series, age_year)
+                        year_offset = _relative_curve_offset(
+                            age_base,
+                            selected_init_age,
+                            year,
+                            variables_base_year,
+                        )
+                        value_year = _curve_value_at_offset(
+                            curve_info.series, year_offset
+                        )
                         delta_per_ha = value_year - value_base
                         veg_curve_delta_co2_by_order[order_num][year] += (
                             float(segment_area_ha) * float(delta_per_ha) * c_to_co2
                         )
 
-                soil_series = None
-                if key_rot is not None:
-                    soil_series = soil_curve_by_key_rot.get(key_rot)
-                if soil_series is None and key_no_rot is not None:
-                    soil_series = soil_curve_by_key_no_rot.get(key_no_rot)
-
-                if soil_series is not None:
-                    soil_raster_base_year = 2023
-                    age_base_at_soil_raster_year = age_base + (
-                        soil_raster_base_year - variables_base_year
+                soil_match = _match_curve_info(
+                    soil_curves_by_key, soil_init_ages_by_key, curve_key, age_base
+                )
+                soil_match = _switch_match_to_zero_curve(
+                    soil_match,
+                    soil_curves_by_key,
+                    curve_key,
+                    enabled=use_cut_zero_curve,
+                )
+                if soil_match is not None:
+                    soil_init_age, soil_curve_info = soil_match
+                    soil_value_base = _curve_value_at_offset(
+                        soil_curve_info.series,
+                        _relative_curve_offset(
+                            age_base,
+                            soil_init_age,
+                            soil_raster_base_year,
+                            variables_base_year,
+                        ),
                     )
-                    age_base_at_soil_raster_year = max(
-                        0, min(age_base_at_soil_raster_year, soil_max_year)
-                    )
-                    soil_value_base = _bm_curve_value_at_age(
-                        soil_series, age_base_at_soil_raster_year
-                    )
-
                     for year in years_int:
-                        age_year = age_base + (year - variables_base_year)
-                        age_year = max(0, min(age_year, soil_max_year))
-                        soil_value_year = _bm_curve_value_at_age(soil_series, age_year)
+                        year_offset = _relative_curve_offset(
+                            age_base,
+                            soil_init_age,
+                            year,
+                            variables_base_year,
+                        )
+                        soil_value_year = _curve_value_at_offset(
+                            soil_curve_info.series, year_offset
+                        )
                         soil_delta_per_ha = soil_value_year - soil_value_base
                         soil_curve_delta_co2_by_order[order_num][year] += (
-                            float(segment_area_ha)
-                            * float(soil_delta_per_ha)
-                            * c_to_co2
+                            float(segment_area_ha) * float(soil_delta_per_ha) * c_to_co2
                         )
 
                 if not is_powerline_zone_by_order.get(order_num, False):
                     continue
 
-                if key_no_rot is None:
-                    continue
-
-                powerline_key_no_rot = (
-                    int(variables["Region"]),
-                    int(POWERLINE_BIOMASS_MAINGROUP),
-                    int(variables["Soiltype"]),
-                    int(variables["Drainage"]),
-                    int(variables["Fertility"]),
-                    int(variables["Species"]),
-                    int(variables["Structure"]),
-                    int(variables["Regime"]),
+                powerline_curve_key = _get_curve_key(
+                    variables,
+                    self.forestry_scenario,
+                    maingroup_override=POWERLINE_BIOMASS_MAINGROUP,
                 )
-                powerline_rotation = _get_int_var(variables, ["Rotation", "rotation"])
-                powerline_key_rot = None
-                if powerline_rotation is not None:
-                    powerline_key_rot = tuple(list(powerline_key_no_rot) + [powerline_rotation])
-
-                powerline_series = None
-                if powerline_key_rot is not None:
-                    powerline_series = curve_by_key_rot.get(powerline_key_rot)
-                if powerline_series is None:
-                    powerline_series = curve_by_key_no_rot.get(powerline_key_no_rot)
-
-                if powerline_series is None:
+                if powerline_curve_key is None:
                     continue
 
-                base_tree_value = _bm_curve_value_at_age(powerline_series, 0)
+                powerline_match = _match_curve_info(
+                    biomass_curves_by_key,
+                    biomass_init_ages_by_key,
+                    powerline_curve_key,
+                    age_base,
+                )
+                if powerline_match is None:
+                    continue
+
+                _, powerline_curve_info = powerline_match
+                base_tree_value = _curve_value_at_offset(powerline_curve_info.series, 0)
                 for year in years_int:
                     age_since_plan = max(0, int(year) - int(current_year))
-                    age_since_plan = max(0, min(age_since_plan, max_year))
-                    tree_value_year = _bm_curve_value_at_age(powerline_series, age_since_plan)
+                    tree_value_year = _curve_value_at_offset(
+                        powerline_curve_info.series, age_since_plan
+                    )
                     tree_delta_per_ha = tree_value_year - base_tree_value
                     veg_powerline_tree_delta_co2_by_order[order_num][year] += (
                         float(segment_area_ha) * float(tree_delta_per_ha) * c_to_co2
@@ -913,14 +990,26 @@ class CarbonCalculator:
 
             for idx in range(area_count):
                 order_num = idx + 1
-                veg_delta = veg_curve_delta_co2_by_order.get(order_num, {}).get(year, 0.0)
-                soil_delta = soil_curve_delta_co2_by_order.get(order_num, {}).get(year, 0.0)
+                veg_delta = veg_curve_delta_co2_by_order.get(order_num, {}).get(
+                    year, 0.0
+                )
+                soil_delta = soil_curve_delta_co2_by_order.get(order_num, {}).get(
+                    year, 0.0
+                )
                 powerline_tree_delta = veg_powerline_tree_delta_co2_by_order.get(
                     order_num, {}
                 ).get(year, 0.0)
 
-                veg_nochange_vals.append(base_bio_co2[idx] + veg_delta)
-                soil_nochange_vals.append(base_soil_co2[idx] + soil_delta)
+                veg_nochange = base_bio_co2[idx] + veg_delta
+                soil_nochange = base_soil_co2[idx] + soil_delta
+
+                veg_nochange_vals.append(veg_nochange)
+                soil_nochange_vals.append(soil_nochange)
+
+                if int(year) == int(current_year):
+                    veg_planned_vals.append(veg_nochange)
+                    soil_planned_vals.append(soil_nochange)
+                    continue
 
                 veg_planned = (
                     planned_bio_base_co2[idx]
@@ -972,7 +1061,10 @@ class CarbonCalculator:
         return_data: CalculationResult = {
             "areas": calcs_df.to_crs(epsg=4326).to_json(),
             "totals": totals_data["totals"],
-            "metadata": totals_data["metadata"],
+            "metadata": {
+                **totals_data["metadata"],
+                "forestry_scenario": self.forestry_scenario,
+            },
         }
 
         return return_data

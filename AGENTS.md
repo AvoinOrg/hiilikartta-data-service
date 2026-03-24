@@ -2,12 +2,12 @@
 
 This repository is a **FastAPI + background worker** service used by Hiilikartta / climate-map for carbon calculations on zoning-plan polygons.
 
-If you change anything that affects **runtime behavior, configuration, APIs, database schema, or calculation logic**, update **both** `README.md` and `AGENTS.md` (and `documentation/calculation.md` when the calculation changes).
+If you change anything that affects **runtime behavior, configuration, APIs, database schema, or calculation logic**, update **both** `README.md` and `AGENTS.md` (and `documentation/calculation_2026_03.md` when the latest calculation changes).
 
 ## What the service does
 
 - Accepts a zipped vector dataset (polygons) via `POST /calculation`
-- Stores the uploaded plan and calculation state in a Postgres “state DB”
+- Stores the uploaded plan, selected forestry scenario, and calculation state in a Postgres “state DB”
 - Enqueues background jobs (SAQ on Redis) to compute results feature-by-feature
 - Queries an external PostGIS “GIS DB” for rasters/segments/regions and combines those with curve/coefficient files under `data/`
 
@@ -86,7 +86,7 @@ Authoritative list: `.env.template`. Highlights:
 
 ### GIS DB tables/rasters
 
-Used by `app/db/gis.py` and described in `documentation/calculation.md`:
+Used by `app/db/gis.py` and described in `documentation/calculation_2026_03.md`:
 
 - `hiilikartta_kasvillisuudenhiili_2021_tcha`
 - `hiilikartta_maaperanhiili_2023_tcha`
@@ -98,8 +98,8 @@ Used by `app/db/gis.py` and described in `documentation/calculation.md`:
 
 Loaded into memory on API startup (`app/utils/data_loader.py`):
 
-- `data/BiomassCurves.txt`
-- `data/SoilCurves.txt`
+- `data/Hiilikartta_Veg.csv`
+- `data/Hiilikartta_Soil.csv`
 - `data/aluekertoimet.csv`
 - `data/Hiilikartta_Kasvillisuuden_ja_maaperan_hiilensidonta_kayttotarkoitusluokittain.csv`
 
@@ -107,6 +107,8 @@ Loaded into memory on API startup (`app/utils/data_loader.py`):
 
 - **Worker is required**: the API only enqueues jobs; without `worker-*` nothing completes.
 - **Responses are gzip**: read endpoints set `Content-Encoding: gzip`; use `curl --compressed` in examples.
+- **Frontend responses include plan metadata**: `forestry_scenario` is returned at the response level and in finished-report metadata blocks.
+- **Final curve tables are single files**: the selected scenario comes from the `Scen` column in `Hiilikartta_Veg.csv` / `Hiilikartta_Soil.csv`; current shipped data exposes scenarios `1..3`.
 - **GIS is the bottleneck**: prefer the throttled helpers in `app/db/gis.py` (they apply local + Redis semaphores and `statement_timeout`).
 - **Timeouts aren’t fatal to the whole plan**: single-feature GIS timeouts are skipped and calculation continues.
 - **State DB schema is Alembic-managed**: update `app/db/models/*` + create migrations; don’t hand-edit `sql/state/create.sql` and expect it to be authoritative.
@@ -116,7 +118,7 @@ Loaded into memory on API startup (`app/utils/data_loader.py`):
 
 - HTTP API / auth: `app/main.py`, `app/auth/validator.py`
 - Worker behavior / retries: `app/saq_worker.py`, `app/db/errors.py`
-- Calculation logic: `app/calculator/calculator.py` (keep `documentation/calculation.md` in sync)
+- Calculation logic: `app/calculator/calculator.py` (keep `documentation/calculation_2026_03.md` in sync)
 - GIS SQL: `app/db/gis.py` (be careful: performance + PostGIS semantics)
 - State DB access/model: `app/db/plan.py`, `app/db/models/plan.py`, `alembic/`
 - Devcontainer: `.devcontainer/devcontainer.json`

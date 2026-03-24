@@ -89,6 +89,7 @@ async def _post_testarea(
     plan_id: Optional[UUID] = None,
     visible_id: Optional[str] = None,
     name: Optional[str] = None,
+    forestry_scenario: Optional[int] = None,
 ):
     plan_id = plan_id or uuid4()
     visible_id = visible_id or f"visible-{uuid4().hex[:6]}"
@@ -96,9 +97,12 @@ async def _post_testarea(
 
     with TEST_DATA_PATH.open("rb") as f:
         files = {"file": (TEST_DATA_PATH.name, f, "application/zip")}
+        params = {"id": str(plan_id), "visible_id": visible_id, "name": name}
+        if forestry_scenario is not None:
+            params["forestry_scenario"] = str(forestry_scenario)
         response = await client.post(
             "/calculation",
-            params={"id": str(plan_id), "visible_id": visible_id, "name": name},
+            params=params,
             files=files,
         )
 
@@ -224,6 +228,43 @@ async def test_post_testarea1_starts_calculation(async_client):
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == CalculationStatus.PROCESSING.value
+    assert body["forestry_scenario"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", [2, 3])
+async def test_post_calculation_accepts_forestry_scenario(async_client, scenario):
+    plan_id, _, _, response = await _post_testarea(
+        async_client, forestry_scenario=scenario
+    )
+    assert response.status_code == 200
+    assert response.json()["forestry_scenario"] == scenario
+
+    async with connection.get_async_context_state_db() as session:
+        plan = await get_plan_by_ui_id(session, plan_id)
+
+    assert plan is not None
+    assert plan.forestry_scenario == scenario
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scenario", ["0", "4", "abc"])
+async def test_post_calculation_rejects_invalid_forestry_scenario(async_client, scenario):
+    plan_id = uuid4()
+    with TEST_DATA_PATH.open("rb") as f:
+        files = {"file": (TEST_DATA_PATH.name, f, "application/zip")}
+        response = await async_client.post(
+            "/calculation",
+            params={
+                "id": str(plan_id),
+                "visible_id": f"visible-{plan_id.hex[:6]}",
+                "name": f"invalid-{plan_id.hex[:6]}",
+                "forestry_scenario": scenario,
+            },
+            files=files,
+        )
+
+    assert response.status_code == 400
 
 
 @pytest.mark.asyncio
@@ -277,6 +318,68 @@ async def test_calculation_values_match_ranges(async_client):
 
     expected_totals = _aggregate_expected_totals(expected_flat_list)
     _assert_values_within_margin(totals_properties, expected_totals, scope_label="totals")
+
+
+@pytest.mark.asyncio
+async def test_finished_payloads_include_forestry_scenario(async_client):
+    forestry_scenario = 2
+    plan_id, _, _, response = await _post_testarea(
+        async_client, forestry_scenario=forestry_scenario
+    )
+    assert response.status_code == 200
+
+    await _wait_for_completion(plan_id)
+
+    calculation_payload = await _fetch_calculation_payload(async_client, plan_id)
+    assert calculation_payload["forestry_scenario"] == forestry_scenario
+    assert (
+        calculation_payload["data"]["metadata"]["forestry_scenario"] == forestry_scenario
+    )
+
+    plan_response = await async_client.get("/plan", params={"id": str(plan_id)})
+    assert plan_response.status_code == 200
+    plan_payload = _decode_gzip_json(plan_response)
+    assert plan_payload["forestry_scenario"] == forestry_scenario
+    assert (
+        plan_payload["report_data"]["metadata"]["forestry_scenario"] == forestry_scenario
+    )
+
+    external_response = await async_client.get(
+        "/plan/external", params={"id": str(plan_id)}
+    )
+    assert external_response.status_code == 200
+    external_payload = _decode_gzip_json(external_response)
+    assert external_payload["forestry_scenario"] == forestry_scenario
+    assert (
+        external_payload["report_data"]["metadata"]["forestry_scenario"]
+        == forestry_scenario
+    )
+
+
+@pytest.mark.asyncio
+async def test_current_year_planned_matches_nochange(async_client):
+    plan_id, _, _, response = await _post_testarea(async_client)
+    assert response.status_code == 200
+
+    await _wait_for_completion(plan_id)
+    payload = await _fetch_calculation_payload(async_client, plan_id)
+
+    totals_geojson = _parse_geojson_field(payload["data"]["totals"])
+    totals_props = totals_geojson["features"][0]["properties"]
+
+    assert (
+        totals_props["bio_carbon_total_planned_2025"]
+        == totals_props["bio_carbon_total_nochange_2025"]
+    )
+    assert (
+        totals_props["ground_carbon_total_planned_2025"]
+        == totals_props["ground_carbon_total_nochange_2025"]
+    )
+    assert totals_props["bio_carbon_ha_planned_2025"] == totals_props["bio_carbon_ha_nochange_2025"]
+    assert (
+        totals_props["ground_carbon_ha_planned_2025"]
+        == totals_props["ground_carbon_ha_nochange_2025"]
+    )
 
 
 @pytest.mark.asyncio
