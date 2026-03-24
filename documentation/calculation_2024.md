@@ -1,6 +1,6 @@
 # Carbon Calculation (Per Area) – Legacy Implementation
 
-This document describes the previous calculation approach (zoning multipliers + `Mabp`). The current implementation is documented in `calculation_new.md`.
+This document describes the previous calculation approach (zoning multipliers + `Mabp`). The newer implementation is documented in `calculation_2025.md`, and the latest implementation is documented in `calculation_2026_03.md`.
 
 This document explains what happens when the backend calculates carbon estimates for a single “area” (one polygon feature), what data is required, what is computed first, and where each step happens in the codebase.
 
