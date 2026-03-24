@@ -47,6 +47,12 @@ class Plan(Base):
         TIMESTAMP,
         server_default=text("current_timestamp(0)"),
     )
+    forestry_scenario: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default=text("1"),
+    )
     total_indices: Mapped[int] = mapped_column(Integer, nullable=True)
     last_index: Mapped[int] = mapped_column(Integer, nullable=True)
     last_area_calculation_status = mapped_column(
