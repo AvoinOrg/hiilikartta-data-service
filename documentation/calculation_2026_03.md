@@ -223,8 +223,6 @@ For each area, the calculator produces flat GeoJSON properties:
 
 The frontend-facing API responses also include the plan-level `forestry_scenario`.
 
-The serialized `areas` and `totals` GeoJSON FeatureCollections also include a top-level `forestry_scenario` field, so the scenario is available both in response metadata and inside the stored GeoJSON payloads.
-
 Reporting years are:
 
 - `current_year`
@@ -305,6 +303,5 @@ The selected `forestry_scenario` is returned:
 - in `GET /plan`
 - in `GET /plan/external`
 - inside finished-report metadata blocks
-- inside the top-level `areas` and `totals` GeoJSON FeatureCollections
 
 This is plan-level metadata, not per-feature GeoJSON data.

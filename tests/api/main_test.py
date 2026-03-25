@@ -347,14 +347,6 @@ async def test_finished_payloads_include_forestry_scenario(async_client):
         calculation_payload["data"]["metadata"]["forestry_scenario"]
         == forestry_scenario
     )
-    assert (
-        _parse_geojson_field(calculation_payload["data"]["areas"])["forestry_scenario"]
-        == forestry_scenario
-    )
-    assert (
-        _parse_geojson_field(calculation_payload["data"]["totals"])["forestry_scenario"]
-        == forestry_scenario
-    )
 
     plan_response = await async_client.get("/plan", params={"id": str(plan_id)})
     assert plan_response.status_code == 200
@@ -362,14 +354,6 @@ async def test_finished_payloads_include_forestry_scenario(async_client):
     assert plan_payload["forestry_scenario"] == forestry_scenario
     assert (
         plan_payload["report_data"]["metadata"]["forestry_scenario"]
-        == forestry_scenario
-    )
-    assert (
-        _parse_geojson_field(plan_payload["report_data"]["areas"])["forestry_scenario"]
-        == forestry_scenario
-    )
-    assert (
-        _parse_geojson_field(plan_payload["report_data"]["totals"])["forestry_scenario"]
         == forestry_scenario
     )
 
@@ -381,18 +365,6 @@ async def test_finished_payloads_include_forestry_scenario(async_client):
     assert external_payload["forestry_scenario"] == forestry_scenario
     assert (
         external_payload["report_data"]["metadata"]["forestry_scenario"]
-        == forestry_scenario
-    )
-    assert (
-        _parse_geojson_field(external_payload["report_data"]["areas"])[
-            "forestry_scenario"
-        ]
-        == forestry_scenario
-    )
-    assert (
-        _parse_geojson_field(external_payload["report_data"]["totals"])[
-            "forestry_scenario"
-        ]
         == forestry_scenario
     )
 

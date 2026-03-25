@@ -75,7 +75,7 @@ The latest implementation is documented in `documentation/calculation_2026_03.md
 - future **existing-land stocks** by scaling those source stocks with the final 2026 curve tables keyed by `Scen`,
 - future **deltas on changed land** from annual sequestration coefficients (CSV),
 - outputs for `nochange` vs `planned` scenarios for `current_year` and 2030..2080 (5y steps),
-- the stored plan-level `forestry_scenario` in frontend-facing responses and inside the top-level `areas` / `totals` GeoJSON FeatureCollections.
+- the stored plan-level `forestry_scenario` in frontend-facing responses and report metadata.
 
 ### Input expectations (high level)
 

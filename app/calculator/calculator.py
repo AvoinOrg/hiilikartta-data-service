@@ -2,7 +2,6 @@
 # import tempfile
 from bisect import bisect_right
 from datetime import datetime
-import json
 import math
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple, TypedDict
 from warnings import simplefilter
@@ -402,14 +401,6 @@ def _segment_carbon_to_total_co2(segment_area_ha: float, carbon_tcha: float) -> 
     return float(segment_area_ha) * float(carbon_tcha) * c_to_co2
 
 
-def _serialize_feature_collection(
-    geodf: gpd.GeoDataFrame, *, forestry_scenario: int
-) -> str:
-    feature_collection = json.loads(geodf.to_crs(epsg=4326).to_json())
-    feature_collection["forestry_scenario"] = int(forestry_scenario)
-    return json.dumps(feature_collection)
-
-
 class CarbonCalculator:
     def __init__(
         self,
@@ -621,9 +612,7 @@ class CarbonCalculator:
         summed_gdf.set_crs(epsg=3067, inplace=True)
 
         return {
-            "totals": _serialize_feature_collection(
-                summed_gdf, forestry_scenario=self.forestry_scenario
-            ),
+            "totals": summed_gdf.to_crs(epsg=4326).to_json(),
             "metadata": {
                 "timestamp": datetime.utcnow(),
                 "forestry_scenario": self.forestry_scenario,
@@ -1142,9 +1131,7 @@ class CarbonCalculator:
         totals_data = await self.calculate_totals()
 
         return_data: CalculationResult = {
-            "areas": _serialize_feature_collection(
-                calcs_df, forestry_scenario=self.forestry_scenario
-            ),
+            "areas": calcs_df.to_crs(epsg=4326).to_json(),
             "totals": totals_data["totals"],
             "metadata": {
                 **totals_data["metadata"],

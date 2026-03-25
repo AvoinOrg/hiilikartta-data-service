@@ -159,7 +159,6 @@ async def update_plan(db_session: AsyncSession, plan: Plan) -> bool:
 #     return target_plan
 
 
-
 async def delete_plan(db_session: AsyncSession, id: str) -> bool:
     await db_session.execute(delete(Plan).filter_by(id=id))
     await db_session.commit()
@@ -234,19 +233,10 @@ async def add_feature_collection_to_plan_areas(
     raw_sql = """
         UPDATE plan
         SET report_areas = jsonb_set(
-            jsonb_set(
-                COALESCE(report_areas, '{"type":"FeatureCollection","features":[]}'::jsonb),
-                '{features}',
-                COALESCE(report_areas->'features', '[]'::jsonb)
-                || COALESCE((:feature_collection_json)::jsonb->'features', '[]'::jsonb),
-                true
-            ),
-            '{forestry_scenario}',
-            COALESCE(
-                (:feature_collection_json)::jsonb->'forestry_scenario',
-                COALESCE(report_areas, '{}'::jsonb)->'forestry_scenario',
-                'null'::jsonb
-            ),
+            COALESCE(report_areas, '{"type":"FeatureCollection","features":[]}'::jsonb),
+            '{features}',
+            COALESCE(report_areas->'features', '[]'::jsonb)
+            || COALESCE((:feature_collection_json)::jsonb->'features', '[]'::jsonb),
             true
         )
         WHERE id = :plan_id
