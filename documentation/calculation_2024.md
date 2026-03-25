@@ -31,7 +31,7 @@ The calculator reads these sources via `app/db/gis.py`:
 
 ### Local CSVs (packaged with the service)
 
-- `data/BiomassCurves.txt`: Lookup table for biomass growth curves; the calculator currently uses the `Mabp` value for the matched curve row.
+- `data/legacy/BiomassCurves.txt`: Lookup table for biomass growth curves; the calculator currently uses the `Mabp` value for the matched curve row.
 - `data/aluekertoimet.csv`: Zoning-code multipliers for “planned” scenario.
 
 Loaded via `app/utils/data_loader.py`.
@@ -130,7 +130,7 @@ The current implementation avoids pixel loops by leveraging the segment-area his
 2. Fetch segment variables once per id:
    - `fetch_variables_for_ids(uniq_ids_list)` returns rows from `luke_mvmisegmentit_muuttujat_kokomaa`.
 3. Map each segment id to a `Mabp` value:
-   - Build a lookup from `BiomassCurves.txt` keyed by the categorical variables:
+   - Build a lookup from `data/legacy/BiomassCurves.txt` keyed by the categorical variables:
      `("Region","Maingroup","Soiltype","Drainage","Fertility","Species","Structure","Regime") -> Mabp`
    - For each segment id, read its variables from the DB row, build the key, and pick `Mabp`.
 4. Aggregate the biomass growth per year, per polygon:

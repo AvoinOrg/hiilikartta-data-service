@@ -70,11 +70,12 @@ curl --compressed "http://localhost:8000/calculation?id=$PLAN_ID"
 
 The latest implementation is documented in `documentation/calculation_2026_03.md`. Historical snapshots are in `documentation/calculation_2025.md` and `documentation/calculation_2024.md`. In short, for each polygon the calculator produces:
 
-- vegetation + soil **base stocks** from PostGIS rasters (converted from tC/ha to tCO2),
-- future **deltas on existing land** from segment variables + final curve tables keyed by `Scen`,
+- biomass **base stock** from segment `Carbon` in `luke_mvmisegmentit_muuttujat_kokomaa` (2021),
+- soil **base stock** from the weighted soil raster `hiilikartta_maaperanhiili_2023_tcha`,
+- future **existing-land stocks** by scaling those source stocks with the final 2026 curve tables keyed by `Scen`,
 - future **deltas on changed land** from annual sequestration coefficients (CSV),
-- outputs for `nochange` vs `planned` scenarios for `current_year` and 2030..2095 (5y steps),
-- the stored plan-level `forestry_scenario` in frontend-facing responses.
+- outputs for `nochange` vs `planned` scenarios for `current_year` and 2030..2080 (5y steps),
+- the stored plan-level `forestry_scenario` in frontend-facing responses and inside the top-level `areas` / `totals` GeoJSON FeatureCollections.
 
 ### Input expectations (high level)
 
@@ -93,6 +94,12 @@ GIS DB (PostGIS) tables/rasters (see `documentation/calculation_2026_03.md` for 
 - `luke_mvmisegmentit_id_kokomaa`
 - `luke_mvmisegmentit_muuttujat_kokomaa`
 - `maakunta` (`geom`, `natcode`)
+
+Notes:
+
+- the latest biomass calculation uses `luke_mvmisegmentit_muuttujat_kokomaa.Carbon` as the actual biomass stock source and for scenario-1 cut detection
+- the latest soil calculation uses the 2023 soil raster as the actual soil stock source
+- the vegetation raster remains available as a 2021 GIS source dataset, but it is not used directly in the latest biomass stock scaling path
 
 Repo data files (loaded on API startup via `app/utils/data_loader.py`):
 

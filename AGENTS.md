@@ -108,7 +108,11 @@ Loaded into memory on API startup (`app/utils/data_loader.py`):
 - **Worker is required**: the API only enqueues jobs; without `worker-*` nothing completes.
 - **Responses are gzip**: read endpoints set `Content-Encoding: gzip`; use `curl --compressed` in examples.
 - **Frontend responses include plan metadata**: `forestry_scenario` is returned at the response level and in finished-report metadata blocks.
+- **GeoJSON payloads include the scenario too**: stored/returned `areas` and `totals` FeatureCollections now carry a top-level `forestry_scenario`.
 - **Final curve tables are single files**: the selected scenario comes from the `Scen` column in `Hiilikartta_Veg.csv` / `Hiilikartta_Soil.csv`; current shipped data exposes scenarios `1..3`.
+- **Biomass actual stock comes from segment data**: the latest calculation uses `luke_mvmisegmentit_muuttujat_kokomaa.Carbon` as the actual biomass stock source and for scenario-1 cut detection, not the vegetation raster.
+- **Soil actual stock comes from the 2023 raster**: the latest calculation scales per-segment weighted values from `hiilikartta_maaperanhiili_2023_tcha`.
+- **Forecast years are capped at 2080**: the output years are `current_year` plus milestone years `2030..2080` that are strictly greater than `current_year`.
 - **GIS is the bottleneck**: prefer the throttled helpers in `app/db/gis.py` (they apply local + Redis semaphores and `statement_timeout`).
 - **Timeouts aren’t fatal to the whole plan**: single-feature GIS timeouts are skipped and calculation continues.
 - **State DB schema is Alembic-managed**: update `app/db/models/*` + create migrations; don’t hand-edit `sql/state/create.sql` and expect it to be authoritative.

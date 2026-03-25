@@ -16,7 +16,7 @@ pytest_plugins = ["app.db.connection_mock"]
 
 from app.db import connection
 from app.db.plan import get_plan_by_ui_id
-from app.main import app, get_current_user
+from app.main import app, get_current_user, get_current_user_optional
 from app.saq_worker import calculate_piece
 from app.types.general import CalculationStatus
 
@@ -25,7 +25,7 @@ TEST_DATA_PATH = Path("tests/data/test-data-small-polygon.zip")
 EXPECTED_RESULTS_PATH = Path("tests/data/test-data-small-polygon-results.geojson")
 TEST_USER = {"user_id": "test-user"}
 
-TEST_EXPECTED_CALCULATION_YEAR = 2025
+TEST_EXPECTED_CALCULATION_YEAR = 2026
 TEST_VALUE_MARGIN_RATIO = 0.15  # 15%
 SQM_TO_HA = 1 / 10_000
 _ZERO_ABS_TOL = 1e-9
@@ -41,6 +41,7 @@ async def _fake_user():
 
 
 app.dependency_overrides[get_current_user] = _fake_user
+app.dependency_overrides[get_current_user_optional] = _fake_user
 
 
 @pytest.fixture(scope="session")
@@ -170,15 +171,17 @@ def _load_expected_features():
     return features
 
 
-def _assert_values_within_margin(actual_properties, expected_properties, *, scope_label):
+def _assert_values_within_margin(
+    actual_properties, expected_properties, *, scope_label
+):
     for key, expected in expected_properties.items():
         assert key in actual_properties, f"{scope_label}: missing key {key}"
         actual = actual_properties[key]
 
         if isinstance(expected, (int, float)) and not isinstance(expected, bool):
-            assert isinstance(actual, (int, float)) and not isinstance(actual, bool), (
-                f"{scope_label}: {key} expected a number, got {type(actual).__name__}"
-            )
+            assert isinstance(actual, (int, float)) and not isinstance(
+                actual, bool
+            ), f"{scope_label}: {key} expected a number, got {type(actual).__name__}"
             expected_float = float(expected)
             actual_float = float(actual)
 
@@ -196,13 +199,15 @@ def _assert_values_within_margin(actual_properties, expected_properties, *, scop
             )
             continue
 
-        assert actual == expected, (
-            f"{scope_label}: {key}={actual!r} does not match expected={expected!r}"
-        )
+        assert (
+            actual == expected
+        ), f"{scope_label}: {key}={actual!r} does not match expected={expected!r}"
 
 
 def _aggregate_expected_totals(expected_flat_properties_by_feature):
-    area_sum = sum(float(props["area"]) for props in expected_flat_properties_by_feature)
+    area_sum = sum(
+        float(props["area"]) for props in expected_flat_properties_by_feature
+    )
     aggregated = {"area": area_sum}
 
     for props in expected_flat_properties_by_feature:
@@ -249,7 +254,9 @@ async def test_post_calculation_accepts_forestry_scenario(async_client, scenario
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("scenario", ["0", "4", "abc"])
-async def test_post_calculation_rejects_invalid_forestry_scenario(async_client, scenario):
+async def test_post_calculation_rejects_invalid_forestry_scenario(
+    async_client, scenario
+):
     plan_id = uuid4()
     with TEST_DATA_PATH.open("rb") as f:
         files = {"file": (TEST_DATA_PATH.name, f, "application/zip")}
@@ -306,18 +313,22 @@ async def test_calculation_values_match_ranges(async_client):
         feature_key = _feature_id(feature) or str(index)
         actual_by_id[feature_key] = feature.get("properties") or {}
 
-    assert len(actual_by_id) == len(expected_flat_by_id), (
-        f"Expected {len(expected_flat_by_id)} area features, got {len(actual_by_id)}"
-    )
+    assert len(actual_by_id) == len(
+        expected_flat_by_id
+    ), f"Expected {len(expected_flat_by_id)} area features, got {len(actual_by_id)}"
 
     for feature_key, expected_props in expected_flat_by_id.items():
         assert feature_key in actual_by_id, f"Missing area feature {feature_key}"
         _assert_values_within_margin(
-            actual_by_id[feature_key], expected_props, scope_label=f"areas[{feature_key}]"
+            actual_by_id[feature_key],
+            expected_props,
+            scope_label=f"areas[{feature_key}]",
         )
 
     expected_totals = _aggregate_expected_totals(expected_flat_list)
-    _assert_values_within_margin(totals_properties, expected_totals, scope_label="totals")
+    _assert_values_within_margin(
+        totals_properties, expected_totals, scope_label="totals"
+    )
 
 
 @pytest.mark.asyncio
@@ -333,7 +344,16 @@ async def test_finished_payloads_include_forestry_scenario(async_client):
     calculation_payload = await _fetch_calculation_payload(async_client, plan_id)
     assert calculation_payload["forestry_scenario"] == forestry_scenario
     assert (
-        calculation_payload["data"]["metadata"]["forestry_scenario"] == forestry_scenario
+        calculation_payload["data"]["metadata"]["forestry_scenario"]
+        == forestry_scenario
+    )
+    assert (
+        _parse_geojson_field(calculation_payload["data"]["areas"])["forestry_scenario"]
+        == forestry_scenario
+    )
+    assert (
+        _parse_geojson_field(calculation_payload["data"]["totals"])["forestry_scenario"]
+        == forestry_scenario
     )
 
     plan_response = await async_client.get("/plan", params={"id": str(plan_id)})
@@ -341,7 +361,16 @@ async def test_finished_payloads_include_forestry_scenario(async_client):
     plan_payload = _decode_gzip_json(plan_response)
     assert plan_payload["forestry_scenario"] == forestry_scenario
     assert (
-        plan_payload["report_data"]["metadata"]["forestry_scenario"] == forestry_scenario
+        plan_payload["report_data"]["metadata"]["forestry_scenario"]
+        == forestry_scenario
+    )
+    assert (
+        _parse_geojson_field(plan_payload["report_data"]["areas"])["forestry_scenario"]
+        == forestry_scenario
+    )
+    assert (
+        _parse_geojson_field(plan_payload["report_data"]["totals"])["forestry_scenario"]
+        == forestry_scenario
     )
 
     external_response = await async_client.get(
@@ -352,6 +381,18 @@ async def test_finished_payloads_include_forestry_scenario(async_client):
     assert external_payload["forestry_scenario"] == forestry_scenario
     assert (
         external_payload["report_data"]["metadata"]["forestry_scenario"]
+        == forestry_scenario
+    )
+    assert (
+        _parse_geojson_field(external_payload["report_data"]["areas"])[
+            "forestry_scenario"
+        ]
+        == forestry_scenario
+    )
+    assert (
+        _parse_geojson_field(external_payload["report_data"]["totals"])[
+            "forestry_scenario"
+        ]
         == forestry_scenario
     )
 
@@ -368,17 +409,20 @@ async def test_current_year_planned_matches_nochange(async_client):
     totals_props = totals_geojson["features"][0]["properties"]
 
     assert (
-        totals_props["bio_carbon_total_planned_2025"]
-        == totals_props["bio_carbon_total_nochange_2025"]
+        totals_props["bio_carbon_total_planned_2026"]
+        == totals_props["bio_carbon_total_nochange_2026"]
     )
     assert (
-        totals_props["ground_carbon_total_planned_2025"]
-        == totals_props["ground_carbon_total_nochange_2025"]
+        totals_props["ground_carbon_total_planned_2026"]
+        == totals_props["ground_carbon_total_nochange_2026"]
     )
-    assert totals_props["bio_carbon_ha_planned_2025"] == totals_props["bio_carbon_ha_nochange_2025"]
     assert (
-        totals_props["ground_carbon_ha_planned_2025"]
-        == totals_props["ground_carbon_ha_nochange_2025"]
+        totals_props["bio_carbon_ha_planned_2026"]
+        == totals_props["bio_carbon_ha_nochange_2026"]
+    )
+    assert (
+        totals_props["ground_carbon_ha_planned_2026"]
+        == totals_props["ground_carbon_ha_nochange_2026"]
     )
 
 

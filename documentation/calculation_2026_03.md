@@ -22,7 +22,8 @@ Terminology:
 6. Scenario 1 adds a cut-detection heuristic based on the segment `Carbon` value from `luke_mvmisegmentit_muuttujat_kokomaa`, not on the vegetation raster.
 7. When that scenario-1 cut heuristic triggers, both the biomass curve and the soil curve are moved to the `InitAge = 0` row for the same categorical key.
 8. Powerline-specific biomass rows are now available in the same final tables via `Maingroup = 4`.
-9. `planned` and `nochange` return exactly the same values for `current_year`. Differences begin at the first milestone year, which is 2030.
+9. Biomass and soil curves are now used to derive percentage-based change from the correct base year, and that percentage is applied to the actual carbon stock from the source data.
+10. The reporting horizon now ends at 2080. `planned` and `nochange` return exactly the same values for `current_year`, and differences begin at the first milestone year, which is 2030.
 
 ## Inputs
 
@@ -74,14 +75,21 @@ The land-use shares must sum to 100, allowing only a small normalization drift.
 
 ## GIS and File Inputs
 
-### Base stock rasters
+### Raster datasets
 
 - Vegetation carbon raster: `hiilikartta_kasvillisuudenhiili_2021_tcha`
 - Soil carbon raster: `hiilikartta_maaperanhiili_2023_tcha`
 
-Both rasters are treated as carbon (`tC/ha`) and converted to `tCO2` using:
+The vegetation raster is a 2021 GIS source dataset, but the latest biomass calculation does not use it directly for stock scaling or cut detection. Biomass actual stock comes from the segment variables table instead.
+
+The soil raster is treated as carbon (`tC/ha`) and converted to `tCO2` using:
 
 `c_to_co2 = 44 / 12`
+
+Source years:
+
+- vegetation raster dataset year: `2021`
+- soil raster stock year: `2023`
 
 ### Segment data
 
@@ -91,7 +99,11 @@ Both rasters are treated as carbon (`tC/ha`) and converted to `tCO2` using:
 The segment variables table provides the current forest attributes, including:
 
 - `Age`, used for `InitAge` bucket selection
-- `Carbon`, used in scenario-1 cut detection
+- `Carbon`, used in scenario-1 cut detection and as the actual biomass carbon stock for percentage scaling
+
+Source year:
+
+- segment variables year: `2021`
 
 ### Region enrichment
 
@@ -105,6 +117,8 @@ For each polygon, the calculation selects the `maakunta` row with the largest in
 
 - `data/Hiilikartta_Veg.csv`
 - `data/Hiilikartta_Soil.csv`
+
+The vegetation and soil curve tables are the 2026 graph tables. That publication year is not used directly in the calculation; the tables are treated as relative curves indexed by `InitAge` and `yearN`.
 
 Changed-land annual coefficients:
 
@@ -135,7 +149,7 @@ Examples with the current files:
 - `Age = 84` uses `InitAge = 50`
 - `Age = 85` uses `InitAge = 85`
 
-### Relative-time interpretation
+### Relative-time interpretation and percentage scaling
 
 The selected curve row is treated as a relative-time series starting at `year0`.
 
@@ -144,13 +158,27 @@ Let:
 - `age_base` = segment `Age` from segment variables, interpreted as age in 2021
 - `init_age` = selected `InitAge`
 - `offset(year) = age_base + (year - 2021) - init_age`
+- if scenario-1 cut detection triggers, the curve position is reset to the `InitAge = 0` row at `year0`, so `offset(year) = year - 2021`
 
-Then:
+Biomass uses the segment-table carbon value from 2021 as the actual stock.
 
-- biomass baseline value at 2021 is `curve(offset(2021))`
-- biomass future value for reporting year `year` is `curve(offset(year))`
-- soil baseline value at 2023 is `curve(age_base + (2023 - 2021) - init_age)`
-- soil future value for reporting year `year` is `curve(offset(year))`
+- biomass curve base value at 2021 is `curve(offset(2021))`
+- biomass curve value at reporting year `year` is `curve(offset(year))`
+- biomass scale factor is `curve(offset(year)) / curve(offset(2021))`
+- actual biomass carbon stock at reporting year `year` is:
+
+  `segment_carbon_2021 * (curve(offset(year)) / curve(offset(2021)))`
+
+Soil uses the actual soil raster stock from 2023 as the actual stock.
+
+- soil curve base value at 2023 is `curve(age_base + (2023 - 2021) - init_age)`
+- soil curve value at reporting year `year` is `curve(offset(year))`
+- soil scale factor is `curve(offset(year)) / curve(age_base + (2023 - 2021) - init_age)`
+- actual soil carbon stock at reporting year `year` is:
+
+  `soil_carbon_2023 * (curve(offset(year)) / curve(age_base + (2023 - 2021) - init_age))`
+
+If scenario-1 cut detection resets the soil curve to the `InitAge = 0` row at `year0`, the actual soil stock source is still the 2023 soil raster. In that case the soil base curve point is `year2` on the reset curve, because `2023 - 2021 = 2`.
 
 Offsets are clamped to the available `year0..yearN` series range.
 
@@ -171,15 +199,16 @@ The cut heuristic triggers only if both are true:
 
 When both are true:
 
-- the biomass calculation uses the same categorical key but switches to the `InitAge = 0` row
-- the soil calculation also switches to the `InitAge = 0` row for the same segment
+- the biomass calculation uses the same categorical key but switches to the `InitAge = 0` row at `year0`
+- the soil calculation also switches to the `InitAge = 0` row at `year0` for the same segment
 
 Important details:
 
 - the comparison uses the segment-table `Carbon` value, not vegetation raster data
 - there is no extra `0.5` multiplier applied during this comparison
 - only scenario 1 uses this rule
-- the segment's actual `Age` is still used for the relative-time offset after switching rows
+- after switching, the curve offset is reset to `year0` at the 2021 segment-data year
+- if either required `InitAge = 0` fallback row is missing, the implementation keeps the original matched rows instead of failing the whole plan
 
 ## Outputs
 
@@ -194,10 +223,14 @@ For each area, the calculator produces flat GeoJSON properties:
 
 The frontend-facing API responses also include the plan-level `forestry_scenario`.
 
+The serialized `areas` and `totals` GeoJSON FeatureCollections also include a top-level `forestry_scenario` field, so the scenario is available both in response metadata and inside the stored GeoJSON payloads.
+
 Reporting years are:
 
 - `current_year`
-- milestone years `2030..2095` in 5-year steps, filtered to years strictly greater than `current_year`
+- milestone years `2030..2080` in 5-year steps, filtered to years strictly greater than `current_year`
+
+If the service runs during calendar year `2026`, the reporting years are `2026`, `2030`, `2035`, ..., `2080`.
 
 ## Calculation Flow
 
@@ -209,22 +242,17 @@ Reporting years are:
 4. Resolve land-use shares and `soil_change_new_vegetation_pct`.
 5. Resolve `natcode` from `maakunta`.
 
-### B) Base stocks from rasters
+### B) Actual carbon stocks from source data
 
-Vegetation base stock:
+Biomass actual stock source:
 
-`veg_base = raster_sum(hiilikartta_kasvillisuudenhiili_2021_tcha) * c_to_co2`
+- per segment, use `luke_mvmisegmentit_muuttujat_kokomaa.Carbon` from `2021`
 
-Soil base stock:
+Soil actual stock source:
 
-`soil_base = raster_sum(hiilikartta_maaperanhiili_2023_tcha) * c_to_co2`
+- per segment, use the weighted soil raster stock from `hiilikartta_maaperanhiili_2023_tcha`
 
-Scenario bases:
-
-- `veg_nochange_base = veg_base`
-- `soil_nochange_base = soil_base`
-- `veg_planned_base = landuse_existing * veg_base`
-- `soil_planned_base = landuse_existing * soil_base + new_vegetation * soil_retention * soil_base`
+These actual source stocks are the values to which the curve-derived scale factors are applied.
 
 ### C) Existing-land future deltas from curve tables
 
@@ -235,8 +263,9 @@ For each segment id inside the polygon:
 3. Match the soil row for the selected `Scen`.
 4. For scenario 1, evaluate cut detection using the segment `Carbon` value.
 5. If the cut heuristic triggers, switch both the biomass row and the soil row to `InitAge = 0`.
-6. Compute per-segment biomass and soil deltas relative to the correct raster base year.
-7. Multiply per-hectare deltas by segment area and convert carbon deltas to `tCO2`.
+6. Compute the biomass curve scale factor from the 2021 curve point to the reporting year curve point, and multiply that factor by the actual segment `Carbon` value from 2021.
+7. Compute the soil curve scale factor from the 2023 curve point to the reporting year curve point, and multiply that factor by the actual segment soil raster value from 2023.
+8. Multiply the resulting per-hectare carbon stocks by segment area and convert them to `tCO2`.
 
 ### D) Changed-land future deltas from annual coefficients
 
@@ -260,10 +289,10 @@ No changed-land annual coefficients, land-use scaling, or powerline planned-tree
 
 For years after `current_year`:
 
-- `veg_nochange(year) = veg_base + Δveg(year)`
-- `soil_nochange(year) = soil_base + Δsoil(year)`
-- `veg_planned(year) = veg_planned_base + landuse_existing * Δveg(year) + changed_land_veg_rate * Δyears (+ powerline tree term)`
-- `soil_planned(year) = soil_planned_base + landuse_existing * Δsoil(year) + changed_land_soil_rate * Δyears`
+- `veg_nochange(year) = existing_biomass_stock_from_segment_carbon(year)`
+- `soil_nochange(year) = existing_soil_stock_from_2023_soil_raster(year)`
+- `veg_planned(year) = landuse_existing * veg_nochange(year) + changed_land_veg_rate * Δyears (+ powerline tree term)`
+- `soil_planned(year) = landuse_existing * soil_nochange(year) + new_vegetation * soil_retention * soil_2023_base + changed_land_soil_rate * Δyears`
 
 Per-hectare values are derived by dividing totals by polygon area in hectares.
 
@@ -276,5 +305,6 @@ The selected `forestry_scenario` is returned:
 - in `GET /plan`
 - in `GET /plan/external`
 - inside finished-report metadata blocks
+- inside the top-level `areas` and `totals` GeoJSON FeatureCollections
 
 This is plan-level metadata, not per-feature GeoJSON data.

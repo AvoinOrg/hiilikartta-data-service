@@ -231,25 +231,33 @@ async def add_feature_to_plan_areas(
 async def add_feature_collection_to_plan_areas(
     db_session: AsyncSession, plan_id: UUID, new_feature_collection_json: str
 ) -> None:
-    # Convert the new feature collection dict to JSON
-    new_features_jsonb = f"'{new_feature_collection_json}'::jsonb->'features'"
-
-    # SQL to update the 'areas' field by merging the new feature collection
-    raw_sql = f"""
-                UPDATE plan
-                SET report_areas = jsonb_set(
-                    report_areas, 
-                    '{{features}}', 
-                    COALESCE(report_areas->'features', '[]'::jsonb) || COALESCE({new_features_jsonb}, '[]'::jsonb)
-                )
-                WHERE id = :plan_id
-                """
+    raw_sql = """
+        UPDATE plan
+        SET report_areas = jsonb_set(
+            jsonb_set(
+                COALESCE(report_areas, '{"type":"FeatureCollection","features":[]}'::jsonb),
+                '{features}',
+                COALESCE(report_areas->'features', '[]'::jsonb)
+                || COALESCE((:feature_collection_json)::jsonb->'features', '[]'::jsonb),
+                true
+            ),
+            '{forestry_scenario}',
+            COALESCE(
+                (:feature_collection_json)::jsonb->'forestry_scenario',
+                COALESCE(report_areas, '{}'::jsonb)->'forestry_scenario',
+                'null'::jsonb
+            ),
+            true
+        )
+        WHERE id = :plan_id
+    """
 
     # Execute the SQL command
     await db_session.execute(
         text(raw_sql),
         {
             "plan_id": plan_id,
+            "feature_collection_json": new_feature_collection_json,
         },
     )
 

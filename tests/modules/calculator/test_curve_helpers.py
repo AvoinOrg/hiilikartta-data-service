@@ -2,12 +2,15 @@ import pandas as pd
 
 from app.calculator.calculator import (
     CurveInfo,
+    _build_reporting_years,
     _build_curve_tables,
+    _curve_scale_factor,
     _curve_value_at_offset,
     _match_curve_info,
     _relative_curve_offset,
     _select_init_age_bucket,
     _should_use_cut_curve,
+    _switch_both_matches_to_zero_curve,
     _switch_match_to_zero_curve,
 )
 
@@ -73,6 +76,34 @@ def test_relative_curve_offset_uses_selected_init_age():
     assert _relative_curve_offset(85, 85, 2021, 2021) == 0
 
 
+def test_relative_curve_offset_resets_to_year0_when_requested():
+    assert _relative_curve_offset(32, 30, 2021, 2021, reset_to_year0=True) == 0
+    assert _relative_curve_offset(32, 30, 2026, 2021, reset_to_year0=True) == 5
+
+
+def test_curve_scale_factor_uses_percentage_change_from_base_point():
+    assert _curve_scale_factor(24.0, 30.0) == 1.25
+    assert _curve_scale_factor(0.0, 30.0) == 1.0
+
+
+def test_build_reporting_years_caps_forecast_at_2080():
+    assert _build_reporting_years(2026) == [
+        2026,
+        2030,
+        2035,
+        2040,
+        2045,
+        2050,
+        2055,
+        2060,
+        2065,
+        2070,
+        2075,
+        2080,
+    ]
+    assert _build_reporting_years(2081) == [2081]
+
+
 def test_match_curve_info_uses_init_age_bucket():
     df = _curve_rows(include_max_carbon=True)
     _, curves_by_key, init_ages_by_key = _build_curve_tables(
@@ -129,6 +160,27 @@ def test_switch_match_to_zero_curve_can_create_match_for_soil():
     )
 
     assert switched == (0, zero_curve)
+
+
+def test_switch_both_matches_to_zero_curve_requires_zero_curve_for_both_tables():
+    key = (1, 1, 2, 3, 4, 5, 6)
+    original_biomass = (50, CurveInfo(series=[10.0, 11.0], max_carbon=90.0))
+    original_soil = (50, CurveInfo(series=[20.0, 21.0], max_carbon=None))
+    biomass_curves_by_key = {key: {50: original_biomass[1], 0: original_biomass[1]}}
+    soil_curves_by_key = {key: {50: original_soil[1]}}
+
+    switched_biomass, switched_soil, applied = _switch_both_matches_to_zero_curve(
+        original_biomass,
+        original_soil,
+        biomass_curves_by_key=biomass_curves_by_key,
+        soil_curves_by_key=soil_curves_by_key,
+        key=key,
+        enabled=True,
+    )
+
+    assert not applied
+    assert switched_biomass == original_biomass
+    assert switched_soil == original_soil
 
 
 def test_soil_curve_matching_uses_same_init_age_logic_without_cut_logic():

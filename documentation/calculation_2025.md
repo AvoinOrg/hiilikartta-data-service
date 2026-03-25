@@ -78,8 +78,8 @@ For part D, the implementation uses:
 
 - Segment-id raster: `luke_mvmisegmentit_id_kokomaa` (pixel value = `kuvio` id)
 - Segment variables table: `luke_mvmisegmentit_muuttujat_kokomaa`
-- Biomass curves (vegetation): `data/BiomassCurves.txt`
-- Soil curves: `data/SoilCurves.txt`
+- Biomass curves (vegetation): `data/legacy/BiomassCurves.txt`
+- Soil curves: `data/legacy/SoilCurves.txt`
 
 Biomass curves are matched by:
 
@@ -259,4 +259,4 @@ Key in-memory structures in `app/calculator/calculator.py`:
 ## Known Gaps / Pending Clarifications
 
 - Part E “change class” (maanpeitteen muutos -luokka): current implementation uses only `(Maakunta, Lyhenne)` coefficients.
-- Powerline curves: `Maingroup = 4` does not exist in `data/BiomassCurves.txt` yet; code uses a placeholder value for now.
+- Powerline curves: `Maingroup = 4` does not exist in `data/legacy/BiomassCurves.txt` yet; code uses a placeholder value for now.
