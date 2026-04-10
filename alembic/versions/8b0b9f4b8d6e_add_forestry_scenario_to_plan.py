@@ -22,10 +22,10 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     op.add_column(
         "plan",
-        sa.Column("forestry_scenario", sa.Integer(), nullable=True, server_default="1"),
+        sa.Column("forestry_scenario", sa.Integer(), nullable=True, server_default="0"),
     )
-    op.execute("UPDATE plan SET forestry_scenario = 1 WHERE forestry_scenario IS NULL")
-    op.alter_column("plan", "forestry_scenario", nullable=False, server_default="1")
+    op.execute("UPDATE plan SET forestry_scenario = 0 WHERE forestry_scenario IS NULL")
+    op.alter_column("plan", "forestry_scenario", nullable=False, server_default="0")
 
 
 def downgrade() -> None:

@@ -50,8 +50,8 @@ class Plan(Base):
     forestry_scenario: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
-        default=1,
-        server_default=text("1"),
+        default=0,
+        server_default=text("0"),
     )
     total_indices: Mapped[int] = mapped_column(Integer, nullable=True)
     last_index: Mapped[int] = mapped_column(Integer, nullable=True)
