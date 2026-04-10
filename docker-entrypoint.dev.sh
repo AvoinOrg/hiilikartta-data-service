@@ -18,6 +18,8 @@ if [[ -z "${STATE_PG_DB:-}" || "${STATE_DB_NAME_LC}" != *dev* ]]; then
 fi
 
 poetry install
+echo "Running Alembic migrations..."
+poetry run alembic upgrade head
 # autossh -4 -v -M 0 -o "StrictHostKeyChecking no" -o "ServerAliveInterval 30" -o "ServerAliveCountMax 3" -nNT -L "${PG_PORT}":0.0.0.0:"${REMOTE_DB_PORT}" ${REMOTE_DB_CONNECTION_STRING} -i /root/.ssh/remote_db_rsa &
 poetry run uvicorn app.main:app --host 0.0.0.0 --port 80 --reload --reload-exclude=".vscode-server/**/*" --reload-dir="app" &
 poetry run jupyter notebook --ip='*' --NotebookApp.token="${NOTEBOOK_TOKEN}" --NotebookApp.password='' --allow-root
