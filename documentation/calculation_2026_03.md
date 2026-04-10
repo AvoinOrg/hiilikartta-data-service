@@ -82,7 +82,7 @@ The land-use shares must sum to 100, allowing only a small normalization drift.
 
 The vegetation raster is a 2021 GIS source dataset, but the latest biomass calculation does not use it directly for stock scaling or cut detection. Biomass actual stock comes from the segment variables table instead.
 
-The soil raster is treated as carbon (`tC/ha`) and converted to `tCO2` using:
+Both rasters and the segment `Carbon` column store values in `tC/ha`. All carbon stocks are converted to `tCO2` using:
 
 `c_to_co2 = 44 / 12`
 
@@ -99,7 +99,7 @@ Source years:
 The segment variables table provides the current forest attributes, including:
 
 - `Age`, used for `InitAge` bucket selection
-- `Carbon`, used in scenario-1 cut detection and as the actual biomass carbon stock for percentage scaling
+- `Carbon` (`tC/ha`), used in scenario-1 cut detection and as the actual biomass carbon stock for percentage scaling (converted to `tCO2` like all other carbon stocks)
 
 Source year:
 
