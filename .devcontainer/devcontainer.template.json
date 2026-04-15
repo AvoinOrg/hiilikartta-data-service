@@ -48,6 +48,12 @@
     // "source=${localEnv:HOME}/.codex,target=/root/.codex,type=bind,consistency=cached"
     //     // "source=/var/run/docker.sock,target=/var/run/docker.sock,type=bind"
     // ],
+    // "mounts": [ // newer attempt
+        //     "type=bind,source=${localEnv:HOME}/.ssh/sockets,target=/ssh-sockets",
+        // "source=${localWorkspaceFolder}/.codex,target=/root/.codex,type=bind,consistency=cached",
+        // "type=bind,source=${localEnv:HOME}/.codex/auth.json,target=/root/.codex/auth.json,consistency=cached",
+        // "source=${localWorkspaceFolder}/.claude,target=/root/.claude,type=bind,consistency=cached",
+        // "type=bind,source=${localEnv:HOME}/.claude/.credentials.json,target=/root/.claude/.credentials.json,consistency=cached"
     // "remoteEnv": {
     //     "SSH_AUTH_SOCK": "/ssh-sockets/agent.sock"
     // }
