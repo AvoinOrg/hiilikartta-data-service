@@ -270,3 +270,5 @@ letsencrypt
 .devcontainer/devcontainer.json
 
 .codex
+.claude/*
+!.claude/settings.template.json
