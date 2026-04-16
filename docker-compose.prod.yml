@@ -29,7 +29,6 @@ services:
 
   worker-prod:
     build: .
-    image: hiilikartta-data-service
     env_file:
       - ./.env
     environment:
