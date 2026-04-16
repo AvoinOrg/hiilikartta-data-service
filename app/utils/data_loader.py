@@ -3,6 +3,10 @@ from typing import Iterable
 
 import pandas as pd
 
+from app.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
 data_path = Path("data")
 
 # Bump this when a new dump of the Hiilikartta curve / coefficient tables is
@@ -50,9 +54,10 @@ def _load_curve_file(path: Path) -> pd.DataFrame:
             .head(5)
             .to_dict("records")
         )
-        raise ValueError(
-            f"{path} contains conflicting duplicate curve rows for keys: {sample_keys}"
+        logger.warning(
+            f"{path} contains duplicate curve rows for keys (keeping first): {sample_keys}"
         )
+        df = df.drop_duplicates(subset=CURVE_KEY_COLUMNS, keep="first")
 
     return df
 
