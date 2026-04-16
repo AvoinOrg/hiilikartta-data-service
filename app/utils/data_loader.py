@@ -5,9 +5,17 @@ import pandas as pd
 
 data_path = Path("data")
 
+# Bump this when a new dump of the Hiilikartta curve / coefficient tables is
+# dropped into `data/`. All dated filenames are derived from this single value.
+HIILIKARTTA_DATA_VERSION = "20260415"
+
 DEFAULT_FORESTRY_SCENARIO = 1
-BIOMASS_CURVE_FILE = data_path / "Hiilikartta_Veg.csv"
-SOIL_CURVE_FILE = data_path / "Hiilikartta_Soil.csv"
+BIOMASS_CURVE_FILE = data_path / f"Hiilikartta_Veg_{HIILIKARTTA_DATA_VERSION}.csv"
+SOIL_CURVE_FILE = data_path / f"Hiilikartta_Soil_{HIILIKARTTA_DATA_VERSION}.csv"
+LANDUSE_SEQUESTRATION_FILE = (
+    data_path
+    / f"Hiilikartta_Kasvillisuuden_ja_maaperan_hiilensidonta_kayttotarkoitusluokittain_{HIILIKARTTA_DATA_VERSION}.csv"
+)
 CURVE_KEY_COLUMNS = [
     "Scen",
     "Region",
@@ -88,7 +96,7 @@ def load_area_multipliers():
 def load_landuse_sequestration():
     global landuse_sequestration_df
     landuse_sequestration_df = pd.read_csv(
-        f"{data_path}/Hiilikartta_Kasvillisuuden_ja_maaperan_hiilensidonta_kayttotarkoitusluokittain.csv",
+        LANDUSE_SEQUESTRATION_FILE,
         sep=";",
         encoding="utf-8-sig",
     )

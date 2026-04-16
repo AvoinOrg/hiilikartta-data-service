@@ -27,8 +27,8 @@ Terminology:
 3. The scenario is no longer derived from the filename. It is matched from the `Scen` column inside those tables.
 4. Curve selection no longer uses `Structure`, `Regime`, or `Rotation`. The lookup key is now `(Scen, Region, Maingroup, Soiltype, Drainage, Fertility, Species, InitAge)`.
 5. Curve rows are selected by `InitAge` bucket using the segment `Age`. The chosen bucket is the largest available `InitAge` that does not exceed the segment age. The starting position on the selected row is `year(Age - InitAge)` — for example, `Age = 47` uses the `InitAge = 30` row starting at `year17`, and `Age = 53` uses the `InitAge = 50` row starting at `year3`.
-6. Every forestry scenario uses the same cut-reset rule. The rule fires on a segment when both `segment_carbon >= (2/3) * MaxCarbon` and `segment_carbon >= 3 * curve_value_at_current_position`. When it fires, both the biomass curve and the soil curve jump to the `InitAge = 0` row of the same categorical key at `year0`. Otherwise the initially matched curve is kept.
-7. `MaxCarbon` is taken from the `Hiilikartta_Veg_<date>.csv` row for the forestry scenario used for cut detection (in current data that is scenario `1`). For every other scenario, `MaxCarbon` is treated as `999`, which effectively disables the cut reset for those scenarios.
+6. Forestry scenario `1` has a cut-reset rule. The rule fires on a segment when both `segment_carbon >= (2/3) * MaxCarbon` and `segment_carbon >= 3 * curve_value_at_current_position`. When it fires, both the biomass curve and the soil curve jump to the `InitAge = 0` row of the same categorical key at `year0`. Otherwise the initially matched curve is kept.
+7. `MaxCarbon` is read from the `Hiilikartta_Veg_<date>.csv` row matched for scenario `1` and is used only by that scenario. The `MaxCarbon` column is not consulted for scenarios `2` or `3`, regardless of the value stored there.
 8. Powerline-specific biomass rows are now available in the same final tables via `Maingroup = 4`.
 9. Biomass and soil curves are used as relative curves. The percentage change between the base-year curve value and the reporting-year curve value is applied to the actual carbon stock of the segment.
 10. The changed-land coefficient table was renamed: column `Luokka_jarjnro` became `Luokka_jarjestys`, and the four sequestration columns are now stored in `t_C` instead of `t_CO2` (they are converted to `tCO2` with the usual `44/12` factor). The per-row lookup key `(Maakunta, Lyhenne)` is unchanged and is still resolved from the plan's polygon region.
@@ -210,13 +210,13 @@ The key idea is that the absolute numbers on the curves are not used as stocks �
 
 ## Forestry Cut-Reset Rule
 
-All forestry scenarios share the same cut-reset rule for segments inside a plan polygon. The rule is designed to detect segments where the current standing biomass looks unrealistically high for the selected curve, which usually means the stand has effectively been cut or the curve does not describe the true history of the stand well enough.
+The cut-reset rule applies only to forestry scenario `1`. Scenarios `2` and `3` skip this step entirely and never consult the `MaxCarbon` column. The rule is designed to detect segments where the current standing biomass looks unrealistically high for the selected curve, which usually means the stand has effectively been cut or the curve does not describe the true history of the stand well enough.
 
-For each segment inside the polygon:
+For each segment inside the polygon (scenario `1` only):
 
 1. Read the segment carbon value from `luke_mvmisegmentit_muuttujat_kokomaa.Carbon`.
 2. Match the initial biomass curve row using the full categorical key and the `InitAge` bucket chosen from the segment age.
-3. Read `MaxCarbon` for that row. For the forestry scenario that owns the cut-reset rule (in current data that is scenario `1`), `MaxCarbon` is the value stored in the row. For every other scenario, `MaxCarbon` is forced to `999`, which in practice prevents the rule from firing because the `2/3 * 999 = 666 tC/ha` floor is never reached.
+3. Read `MaxCarbon` for that row.
 4. Evaluate `expected_curve_value_at_current_position = curve(offset(2021))` on the initially matched biomass row — that is, the biomass value the curve assigns to the segment at its current age.
 
 The rule fires on a segment when both of the following are true:
@@ -285,7 +285,7 @@ For each segment id inside the polygon:
 1. Fetch segment variables once, including `Age` and `Carbon`.
 2. Match the biomass row for the selected `Scen`.
 3. Match the soil row for the selected `Scen`.
-4. Evaluate the forestry cut-reset rule. Use `MaxCarbon` from the biomass row for the cut-owning forestry scenario (currently `Scen = 1`); for any other scenario treat `MaxCarbon` as `999`.
+4. For forestry scenario `1` only, evaluate the cut-reset rule using `MaxCarbon` from the matched biomass row. Scenarios `2` and `3` skip this step.
 5. If the cut-reset rule fires, switch both the biomass row and the soil row to `InitAge = 0` and reset the curve position to `year0` at the 2021 data year.
 6. Compute the biomass curve scale factor from the 2021 curve point to the reporting year curve point, and multiply that factor by the actual segment `Carbon` value from 2021.
 7. Compute the soil curve scale factor from the 2023 curve point to the reporting year curve point, and multiply that factor by the actual segment soil raster value from 2023.

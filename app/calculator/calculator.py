@@ -55,16 +55,12 @@ SOIL_CHANGE_NEW_VEG_PCT_ALIASES = [
     "maaperan_muutos_uuden_kasvipeitteen_alueilla",
 ]
 
-SEQUESTRATION_COL_VEG_OPEN = (
-    "Uusi_avoin_kasvillisuus_kasvillisuuden_hiilensidonta_t_CO2"
-)
+SEQUESTRATION_COL_VEG_OPEN = "Uusi_avoin_kasvillisuus_kasvillisuuden_hiilensidonta_t_C"
 SEQUESTRATION_COL_VEG_TREE = (
-    "Uusi_puustoinen_kasvillisuus_kasvillisuuden_hiilensidonta_t_CO2"
+    "Uusi_puustoinen_kasvillisuus_kasvillisuuden_hiilensidonta_t_C"
 )
-SEQUESTRATION_COL_SOIL_OPEN = "Uusi_avoin_kasvillisuus_maaperan_hiilensidonta_t_CO2"
-SEQUESTRATION_COL_SOIL_TREE = (
-    "Uusi_puustoinen_kasvillisuus_maaperan_hiilensidonta_t_CO2"
-)
+SEQUESTRATION_COL_SOIL_OPEN = "Uusi_avoin_kasvillisuus_maaperan_hiilensidonta_t_C"
+SEQUESTRATION_COL_SOIL_TREE = "Uusi_puustoinen_kasvillisuus_maaperan_hiilensidonta_t_C"
 
 POWERLINE_ZONING_CODES = {"ENsl", "ENslja"}
 POWERLINE_BIOMASS_MAINGROUP = 4
@@ -815,10 +811,19 @@ class CarbonCalculator:
                         coeff_row.get(SEQUESTRATION_COL_SOIL_TREE)
                     )
 
-                    k_veg_open = 0.0 if k_veg_open is None else float(k_veg_open)
-                    k_veg_tree = 0.0 if k_veg_tree is None else float(k_veg_tree)
-                    k_soil_open = 0.0 if k_soil_open is None else float(k_soil_open)
-                    k_soil_tree = 0.0 if k_soil_tree is None else float(k_soil_tree)
+                    # Source values are t_C/ha/yr; downstream math expects tCO2/ha/yr.
+                    k_veg_open = (
+                        0.0 if k_veg_open is None else float(k_veg_open) * c_to_co2
+                    )
+                    k_veg_tree = (
+                        0.0 if k_veg_tree is None else float(k_veg_tree) * c_to_co2
+                    )
+                    k_soil_open = (
+                        0.0 if k_soil_open is None else float(k_soil_open) * c_to_co2
+                    )
+                    k_soil_tree = (
+                        0.0 if k_soil_tree is None else float(k_soil_tree) * c_to_co2
+                    )
 
             veg_open_coeffs.append(k_veg_open)
             veg_tree_coeffs.append(k_veg_tree)
