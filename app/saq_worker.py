@@ -165,7 +165,9 @@ async def calculate_piece(ctx, *, ui_id: str):
         await _enqueue_next(delay_seconds=exc.retry_in_seconds)
         return
     except GisOperationTimedOutError as exc:
-        logger.error(f"GIS operation timed out; skipping feature for ui_id={ui_id}: {exc}")
+        logger.error(
+            f"GIS operation timed out; skipping feature for ui_id={ui_id}: {exc}"
+        )
         async with get_async_context_state_db() as state_db_session:
             plan = await get_plan_without_data_by_ui_id(state_db_session, UUID(ui_id))
             if plan:
@@ -176,7 +178,7 @@ async def calculate_piece(ctx, *, ui_id: str):
         await _enqueue_next()
         return
     except Exception as e:
-        tb_str = traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__)
+        tb_str = traceback.format_exception(type(e), e, e.__traceback__)
         traceback_str = "".join(tb_str)
         logger.error(
             f"Error calculating plan with ui_id={ui_id} on feature: {feature}\n{traceback_str}"
@@ -206,7 +208,9 @@ async def calculate_piece(ctx, *, ui_id: str):
             await _enqueue_next()
             return
 
-        await add_feature_collection_to_plan_areas(state_db_session, plan.id, calc_data["areas"])
+        await add_feature_collection_to_plan_areas(
+            state_db_session, plan.id, calc_data["areas"]
+        )
         plan.last_area_calculation_status = CalculationStatus.FINISHED.value
         plan.calculation_updated_ts = calc_data["metadata"].get("timestamp")
         plan.last_index = plan.last_index + 1

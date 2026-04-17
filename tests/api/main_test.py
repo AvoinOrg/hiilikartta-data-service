@@ -499,3 +499,37 @@ async def test_calculate_piece_skips_only_timed_out_feature(async_client, monkey
     assert plan.last_area_calculation_status.value == CalculationStatus.ERROR.value
     assert plan.last_area_calculation_retries == 0
     assert plan.last_index == 0
+
+
+@pytest.mark.asyncio
+async def test_calculate_piece_requeues_on_generic_error(async_client, monkeypatch):
+    plan_id, _, _, response = await _post_testarea(async_client)
+    assert response.status_code == 200
+
+    from app import saq_worker
+    from app.calculator.calculator import CarbonCalculator
+    from app.db.connection_mock import InlineQueue
+
+    async def fake_calculate(self):  # type: ignore[no-untyped-def]
+        raise ValueError("boom")
+
+    monkeypatch.setattr(CarbonCalculator, "calculate", fake_calculate)
+    queue_stub = cast(InlineQueue, saq_worker.queue)
+    queue_stub.enqueued.clear()
+
+    await calculate_piece({}, ui_id=str(plan_id))
+
+    assert queue_stub.enqueued, "Expected calculate_piece to be re-enqueued"
+    call = queue_stub.enqueued[-1]
+    assert call["function"] == "calculate_piece"
+    assert call["kwargs"]["ui_id"] == str(plan_id)
+    assert "scheduled" not in call["kwargs"]
+
+    async with connection.get_async_context_state_db() as session:
+        plan = await get_plan_by_ui_id(session, plan_id)
+
+    assert plan is not None
+    assert plan.calculation_status.value == CalculationStatus.PROCESSING.value
+    assert plan.last_area_calculation_status.value == CalculationStatus.PROCESSING.value
+    assert plan.last_area_calculation_retries == 1
+    assert plan.last_index == -1

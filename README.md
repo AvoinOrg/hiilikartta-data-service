@@ -117,6 +117,8 @@ GIS operations are intentionally throttled to protect the GIS DB:
 
 When the GIS DB is at capacity, jobs are re-enqueued later (`GisRetryLaterError`). If a single feature times out, the worker skips that feature and continues.
 
+Large plans switch to a simplified GIS aggregation path. When editing raw SQL in `app/db/gis.py`, prefer `CAST(:param AS type)` over `:param::type` so SQLAlchemy + `asyncpg` bind parameters correctly in worker queries.
+
 ## Running locally (Docker Compose)
 
 ### Prerequisites
@@ -220,6 +222,7 @@ Key env vars:
 - **Formatting**: `poetry run black .`
 - **Types**: keep/extend existing type hints; avoid introducing untyped public APIs where practical
 - **GIS DB safety**: use the throttled helpers in `app/db/gis.py` (don’t open raw GIS sessions without a good reason)
+- **Logging**: module loggers in `app/utils/logger.py` use a single non-propagating `RichHandler`; keep propagation disabled to avoid duplicate lines under Gunicorn/SAQ/root logging
 
 ### Devcontainer
 

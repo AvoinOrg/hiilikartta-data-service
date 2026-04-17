@@ -112,7 +112,9 @@ Loaded into memory on API startup (`app/utils/data_loader.py`):
 - **Soil actual stock comes from the 2023 raster**: the latest calculation scales per-segment weighted values from `hiilikartta_maaperanhiili_2023_tcha`.
 - **Forecast years are capped at 2080**: the output years are `current_year` plus milestone years `2030..2080` that are strictly greater than `current_year`.
 - **GIS is the bottleneck**: prefer the throttled helpers in `app/db/gis.py` (they apply local + Redis semaphores and `statement_timeout`).
+- **Simplified GIS SQL must use CAST binds**: when editing raw `text()` SQL for large-area/simplified queries, use `CAST(:param AS type)` instead of `:param::type` so SQLAlchemy + asyncpg bind correctly.
 - **Timeouts aren’t fatal to the whole plan**: single-feature GIS timeouts are skipped and calculation continues.
+- **Keep module loggers non-propagating**: `app/utils/logger.py` should attach one `RichHandler` and set `propagate = False`, otherwise API/worker logs get duplicated by root logging.
 - **State DB schema is Alembic-managed**: update `app/db/models/*` + create migrations; don’t hand-edit `sql/state/create.sql` and expect it to be authoritative.
 - **Prod startup enforces migrations**: by default, prod containers refuse to start if the state DB is not at Alembic head (`STATE_DB_MIGRATION_MODE=check`). Set `STATE_DB_MIGRATION_MODE=upgrade` for the API container to run `alembic upgrade head` on startup.
 

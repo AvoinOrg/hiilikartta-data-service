@@ -1,6 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, List, Optional
+from typing import Any, AsyncIterator, List, Optional
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +15,7 @@ from app.db.redis_semaphore import distributed_gis_slot
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
+GRID_TO_HA = (16 * 16) / 10_000
 
 
 @asynccontextmanager
@@ -63,13 +64,11 @@ async def fetch_variables_for_ids(
 ):
     try:
         ids_int = tuple([int(item) for item in ids])
-        statement = text(
-            """
+        statement = text("""
             SELECT *
             FROM luke_mvmisegmentit_muuttujat_kokomaa
             WHERE kuvio = ANY(:ids);
-            """
-        )
+            """)
 
         async with _get_throttled_session(db_session) as session:
             result = await session.execute(statement, {"ids": ids_int})
@@ -84,8 +83,7 @@ async def fetch_variables_for_ids(
 
 
 def _build_raster_union_clip_statement(table_name: str, wkt_list_str: str):
-    return text(
-        f"""
+    return text(f"""
         WITH input_geoms AS (
             SELECT
                 idx as order_num,
@@ -110,8 +108,7 @@ def _build_raster_union_clip_statement(table_name: str, wkt_list_str: str):
         FROM unioned u
         JOIN input_geoms g USING (order_num)
         ORDER BY g.order_num;
-        """
-    )
+        """)
 
 
 async def fetch_rasters_for_regions(
@@ -233,8 +230,7 @@ async def fetch_segment_areas_ha_for_regions(
         wkt_list_str = ",".join([f"('{wkt}')" for wkt in wkts])
 
         if simplify_calcs:
-            statement = text(
-                f"""
+            statement = text(f"""
                 WITH input_geoms AS (
                     SELECT
                         idx AS order_num,
@@ -262,12 +258,10 @@ async def fetch_segment_areas_ha_for_regions(
                     (pixel_count * :grid_to_ha)::double precision AS area_ha
                 FROM pixel_counts
                 ORDER BY order_num, segment_id;
-                """
-            )
+                """)
             params = {"crs": crs_int, "grid_to_ha": (16 * 16) / 10_000}
         else:
-            statement = text(
-                f"""
+            statement = text(f"""
                 WITH input_geoms AS (
                     SELECT
                         idx AS order_num,
@@ -290,8 +284,7 @@ async def fetch_segment_areas_ha_for_regions(
                 ) AS p
                 GROUP BY g.order_num, segment_id
                 ORDER BY g.order_num, segment_id;
-                """
-            )
+                """)
             params = {"crs": crs_int}
 
         async with _get_throttled_session(db_session) as session:
@@ -303,6 +296,179 @@ async def fetch_segment_areas_ha_for_regions(
     except SQLAlchemyError as ex:
         logger.exception(ex)
         raise
+
+
+def _build_weighted_raster_sum_ha_by_segment_query(
+    raster_table: str,
+    wkt_list_str: str,
+    crs_int: int,
+    simplify_calcs: bool,
+) -> tuple[Any, dict[str, float | int]]:
+    if simplify_calcs:
+        statement = text(f"""
+            WITH input_geoms AS (
+                SELECT
+                    idx AS order_num,
+                    ST_SetSRID(ST_GeomFromText(wkt), :crs) AS geom
+                FROM unnest(array[{wkt_list_str}]) WITH ORDINALITY AS indexed_wkt(wkt, idx)
+            ),
+            segment_pixels AS (
+                SELECT
+                    g.order_num,
+                    (p).val::int AS segment_id,
+                    ST_PointOnSurface((p).geom) AS sample_point
+                FROM luke_mvmisegmentit_id_kokomaa r
+                JOIN input_geoms g
+                    ON ST_Intersects(r.rast, g.geom)
+                CROSS JOIN LATERAL ST_PixelAsPolygons(
+                    ST_Clip(r.rast, g.geom, touched => FALSE),
+                    1,
+                    TRUE
+                ) AS p
+            ),
+            sampled AS (
+                SELECT
+                    sp.order_num,
+                    sp.segment_id,
+                    CAST(:grid_to_ha AS double precision) AS area_ha,
+                    COALESCE(rv.raster_value, 0.0)::double precision AS raster_value
+                FROM segment_pixels sp
+                LEFT JOIN LATERAL (
+                    SELECT ST_Value(r.rast, 1, sp.sample_point)::double precision AS raster_value
+                    FROM {raster_table} r
+                    WHERE ST_Intersects(r.rast, sp.sample_point)
+                    LIMIT 1
+                ) rv ON TRUE
+            )
+            SELECT
+                order_num,
+                segment_id,
+                SUM(raster_value * area_ha)::double precision AS sum_weighted_ha
+            FROM sampled
+            GROUP BY order_num, segment_id
+            ORDER BY order_num, segment_id;
+            """)
+        params: dict[str, float | int] = {"crs": crs_int, "grid_to_ha": GRID_TO_HA}
+    else:
+        statement = text(f"""
+            WITH input_geoms AS (
+                SELECT
+                    idx AS order_num,
+                    ST_SetSRID(ST_GeomFromText(wkt), :crs) AS geom
+                FROM unnest(array[{wkt_list_str}]) WITH ORDINALITY AS indexed_wkt(wkt, idx)
+            ),
+            segment_pixels AS (
+                SELECT
+                    g.order_num,
+                    (p).val::int AS segment_id,
+                    ST_Intersection((p).geom, g.geom) AS intersect_geom,
+                    (
+                        ST_Area(ST_Intersection((p).geom, g.geom)) / 10000.0
+                    )::double precision AS area_ha
+                FROM luke_mvmisegmentit_id_kokomaa r
+                JOIN input_geoms g
+                    ON ST_Intersects(r.rast, g.geom)
+                CROSS JOIN LATERAL ST_PixelAsPolygons(
+                    ST_Clip(r.rast, g.geom, touched => TRUE),
+                    1,
+                    TRUE
+                ) AS p
+            ),
+            sampled AS (
+                SELECT
+                    sp.order_num,
+                    sp.segment_id,
+                    sp.area_ha,
+                    COALESCE(rv.raster_value, 0.0)::double precision AS raster_value
+                FROM segment_pixels sp
+                LEFT JOIN LATERAL (
+                    SELECT ST_Value(
+                        r.rast,
+                        1,
+                        ST_PointOnSurface(sp.intersect_geom)
+                    )::double precision AS raster_value
+                    FROM {raster_table} r
+                    WHERE ST_Intersects(r.rast, ST_PointOnSurface(sp.intersect_geom))
+                    LIMIT 1
+                ) rv ON TRUE
+                WHERE NOT ST_IsEmpty(sp.intersect_geom)
+                  AND sp.area_ha > 0
+            )
+            SELECT
+                order_num,
+                segment_id,
+                SUM(raster_value * area_ha)::double precision AS sum_weighted_ha
+            FROM sampled
+            GROUP BY order_num, segment_id
+            ORDER BY order_num, segment_id;
+            """)
+        params = {"crs": crs_int}
+
+    return statement, params
+
+
+def _build_weighted_raster_sum_ha_query(
+    raster_table: str,
+    wkt_list_str: str,
+    crs_int: int,
+    simplify_calcs: bool,
+) -> tuple[Any, dict[str, float | int]]:
+    if simplify_calcs:
+        statement = text(f"""
+            WITH input_geoms AS (
+                SELECT
+                    idx AS order_num,
+                    ST_SetSRID(ST_GeomFromText(wkt), :crs) AS geom
+                FROM unnest(array[{wkt_list_str}]) WITH ORDINALITY AS indexed_wkt(wkt, idx)
+            ),
+            stats AS (
+                SELECT
+                    g.order_num,
+                    (ST_SummaryStatsAgg(
+                        ST_Clip(r.rast, g.geom, touched => FALSE),
+                        1,
+                        TRUE
+                    )).sum::double precision AS sum_per_ha
+                FROM {raster_table} r
+                JOIN input_geoms g
+                    ON ST_Intersects(r.rast, g.geom)
+                GROUP BY g.order_num
+            )
+            SELECT
+                order_num,
+                (sum_per_ha * CAST(:grid_to_ha AS double precision)) AS sum_weighted_ha
+            FROM stats
+            ORDER BY order_num;
+            """)
+        params: dict[str, float | int] = {"crs": crs_int, "grid_to_ha": GRID_TO_HA}
+    else:
+        statement = text(f"""
+            WITH input_geoms AS (
+                SELECT
+                    idx AS order_num,
+                    ST_SetSRID(ST_GeomFromText(wkt), :crs) AS geom
+                FROM unnest(array[{wkt_list_str}]) WITH ORDINALITY AS indexed_wkt(wkt, idx)
+            )
+            SELECT
+                g.order_num,
+                SUM(
+                    (p).val::double precision
+                    * (ST_Area(ST_Intersection((p).geom, g.geom)) / 10000.0)
+                )::double precision AS sum_weighted_ha
+            FROM {raster_table} r
+            JOIN input_geoms g
+                ON ST_Intersects(r.rast, g.geom)
+            CROSS JOIN LATERAL ST_PixelAsPolygons(
+                ST_Clip(r.rast, g.geom, touched => TRUE),
+                1,
+                TRUE
+            ) AS p
+            GROUP BY g.order_num
+            ORDER BY g.order_num;
+            """)
+        params = {"crs": crs_int}
+
+    return statement, params
 
 
 async def fetch_weighted_raster_sum_ha_by_segment_for_regions(
@@ -322,110 +488,12 @@ async def fetch_weighted_raster_sum_ha_by_segment_for_regions(
 
     try:
         wkt_list_str = ",".join([f"('{wkt}')" for wkt in wkts])
-
-        if simplify_calcs:
-            statement = text(
-                f"""
-                WITH input_geoms AS (
-                    SELECT
-                        idx AS order_num,
-                        ST_SetSRID(ST_GeomFromText(wkt), :crs) AS geom
-                    FROM unnest(array[{wkt_list_str}]) WITH ORDINALITY AS indexed_wkt(wkt, idx)
-                ),
-                segment_pixels AS (
-                    SELECT
-                        g.order_num,
-                        (p).val::int AS segment_id,
-                        ST_PointOnSurface((p).geom) AS sample_point
-                    FROM luke_mvmisegmentit_id_kokomaa r
-                    JOIN input_geoms g
-                        ON ST_Intersects(r.rast, g.geom)
-                    CROSS JOIN LATERAL ST_PixelAsPolygons(
-                        ST_Clip(r.rast, g.geom, touched => FALSE),
-                        1,
-                        TRUE
-                    ) AS p
-                ),
-                sampled AS (
-                    SELECT
-                        sp.order_num,
-                        sp.segment_id,
-                        :grid_to_ha::double precision AS area_ha,
-                        COALESCE(rv.raster_value, 0.0)::double precision AS raster_value
-                    FROM segment_pixels sp
-                    LEFT JOIN LATERAL (
-                        SELECT ST_Value(r.rast, 1, sp.sample_point)::double precision AS raster_value
-                        FROM {raster_table} r
-                        WHERE ST_Intersects(r.rast, sp.sample_point)
-                        LIMIT 1
-                    ) rv ON TRUE
-                )
-                SELECT
-                    order_num,
-                    segment_id,
-                    SUM(raster_value * area_ha)::double precision AS sum_weighted_ha
-                FROM sampled
-                GROUP BY order_num, segment_id
-                ORDER BY order_num, segment_id;
-                """
-            )
-            params = {"crs": crs_int, "grid_to_ha": (16 * 16) / 10_000}
-        else:
-            statement = text(
-                f"""
-                WITH input_geoms AS (
-                    SELECT
-                        idx AS order_num,
-                        ST_SetSRID(ST_GeomFromText(wkt), :crs) AS geom
-                    FROM unnest(array[{wkt_list_str}]) WITH ORDINALITY AS indexed_wkt(wkt, idx)
-                ),
-                segment_pixels AS (
-                    SELECT
-                        g.order_num,
-                        (p).val::int AS segment_id,
-                        ST_Intersection((p).geom, g.geom) AS intersect_geom,
-                        (
-                            ST_Area(ST_Intersection((p).geom, g.geom)) / 10000.0
-                        )::double precision AS area_ha
-                    FROM luke_mvmisegmentit_id_kokomaa r
-                    JOIN input_geoms g
-                        ON ST_Intersects(r.rast, g.geom)
-                    CROSS JOIN LATERAL ST_PixelAsPolygons(
-                        ST_Clip(r.rast, g.geom, touched => TRUE),
-                        1,
-                        TRUE
-                    ) AS p
-                ),
-                sampled AS (
-                    SELECT
-                        sp.order_num,
-                        sp.segment_id,
-                        sp.area_ha,
-                        COALESCE(rv.raster_value, 0.0)::double precision AS raster_value
-                    FROM segment_pixels sp
-                    LEFT JOIN LATERAL (
-                        SELECT ST_Value(
-                            r.rast,
-                            1,
-                            ST_PointOnSurface(sp.intersect_geom)
-                        )::double precision AS raster_value
-                        FROM {raster_table} r
-                        WHERE ST_Intersects(r.rast, ST_PointOnSurface(sp.intersect_geom))
-                        LIMIT 1
-                    ) rv ON TRUE
-                    WHERE NOT ST_IsEmpty(sp.intersect_geom)
-                      AND sp.area_ha > 0
-                )
-                SELECT
-                    order_num,
-                    segment_id,
-                    SUM(raster_value * area_ha)::double precision AS sum_weighted_ha
-                FROM sampled
-                GROUP BY order_num, segment_id
-                ORDER BY order_num, segment_id;
-                """
-            )
-            params = {"crs": crs_int}
+        statement, params = _build_weighted_raster_sum_ha_by_segment_query(
+            raster_table,
+            wkt_list_str,
+            crs_int,
+            simplify_calcs,
+        )
 
         async with _get_throttled_session(db_session) as session:
             result = await session.execute(statement, params)
@@ -458,65 +526,12 @@ async def fetch_weighted_raster_sum_ha_for_regions(
 
     try:
         wkt_list_str = ",".join([f"('{wkt}')" for wkt in wkts])
-
-        if simplify_calcs:
-            statement = text(
-                f"""
-                WITH input_geoms AS (
-                    SELECT
-                        idx AS order_num,
-                        ST_SetSRID(ST_GeomFromText(wkt), :crs) AS geom
-                    FROM unnest(array[{wkt_list_str}]) WITH ORDINALITY AS indexed_wkt(wkt, idx)
-                ),
-                stats AS (
-                    SELECT
-                        g.order_num,
-                        (ST_SummaryStatsAgg(
-                            ST_Clip(r.rast, g.geom, touched => FALSE),
-                            1,
-                            TRUE
-                        )).sum::double precision AS sum_per_ha
-                    FROM {raster_table} r
-                    JOIN input_geoms g
-                        ON ST_Intersects(r.rast, g.geom)
-                    GROUP BY g.order_num
-                )
-                SELECT
-                    order_num,
-                    (sum_per_ha * :grid_to_ha)::double precision AS sum_weighted_ha
-                FROM stats
-                ORDER BY order_num;
-                """
-            )
-            params = {"crs": crs_int, "grid_to_ha": (16 * 16) / 10_000}
-        else:
-            statement = text(
-                f"""
-                WITH input_geoms AS (
-                    SELECT
-                        idx AS order_num,
-                        ST_SetSRID(ST_GeomFromText(wkt), :crs) AS geom
-                    FROM unnest(array[{wkt_list_str}]) WITH ORDINALITY AS indexed_wkt(wkt, idx)
-                )
-                SELECT
-                    g.order_num,
-                    SUM(
-                        (p).val::double precision
-                        * (ST_Area(ST_Intersection((p).geom, g.geom)) / 10000.0)
-                    )::double precision AS sum_weighted_ha
-                FROM {raster_table} r
-                JOIN input_geoms g
-                    ON ST_Intersects(r.rast, g.geom)
-                CROSS JOIN LATERAL ST_PixelAsPolygons(
-                    ST_Clip(r.rast, g.geom, touched => TRUE),
-                    1,
-                    TRUE
-                ) AS p
-                GROUP BY g.order_num
-                ORDER BY g.order_num;
-                """
-            )
-            params = {"crs": crs_int}
+        statement, params = _build_weighted_raster_sum_ha_query(
+            raster_table,
+            wkt_list_str,
+            crs_int,
+            simplify_calcs,
+        )
 
         async with _get_throttled_session(db_session) as session:
             result = await session.execute(statement, params)
@@ -549,8 +564,7 @@ async def fetch_natcode_for_regions(
     try:
         wkt_list_str = ",".join([f"('{wkt}')" for wkt in wkts])
 
-        statement = text(
-            f"""
+        statement = text(f"""
             WITH input_geoms AS (
                 SELECT
                     idx AS order_num,
@@ -581,8 +595,7 @@ async def fetch_natcode_for_regions(
             FROM ranked
             WHERE rn = 1
             ORDER BY order_num;
-            """
-        )
+            """)
 
         async with _get_throttled_session(db_session) as session:
             result = await session.execute(statement, {"crs": crs_int})
