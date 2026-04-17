@@ -103,10 +103,9 @@ Notes:
 
 Repo data files (loaded on API startup via `app/utils/data_loader.py`):
 
-- `data/Hiilikartta_Veg.csv`
-- `data/Hiilikartta_Soil.csv`
-- `data/aluekertoimet.csv`
-- `data/Hiilikartta_Kasvillisuuden_ja_maaperan_hiilensidonta_kayttotarkoitusluokittain.csv`
+- `data/Hiilikartta_Veg_20260415.csv`
+- `data/Hiilikartta_Soil_20260415.csv`
+- `data/Hiilikartta_Kasvillisuuden_ja_maaperan_hiilensidonta_kayttotarkoitusluokittain_20260415.csv`
 
 ### Operational behavior (GIS throttling)
 

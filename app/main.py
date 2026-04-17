@@ -38,7 +38,6 @@ from app.utils.logger import get_logger
 from app.utils.data_loader import (
     DEFAULT_FORESTRY_SCENARIO,
     get_available_forestry_scenarios,
-    load_area_multipliers,
     load_bm_curves,
     load_landuse_sequestration,
     load_soil_curves,
@@ -56,7 +55,6 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup event
-    load_area_multipliers()
     load_bm_curves()
     load_soil_curves()
     get_available_forestry_scenarios()

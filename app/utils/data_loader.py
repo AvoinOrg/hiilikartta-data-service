@@ -33,7 +33,6 @@ CURVE_KEY_COLUMNS = [
 
 bm_curve_df: pd.DataFrame | None = None
 soil_curve_df: pd.DataFrame | None = None
-area_multipliers_df = None
 landuse_sequestration_df = None
 
 
@@ -91,13 +90,6 @@ def load_soil_curves() -> None:
     soil_curve_df = _load_curve_file(SOIL_CURVE_FILE)
 
 
-def load_area_multipliers():
-    global area_multipliers_df
-    area_multipliers_df = pd.read_csv(
-        f"{data_path}/aluekertoimet.csv", index_col="Lyhenne"
-    )
-
-
 def load_landuse_sequestration():
     global landuse_sequestration_df
     landuse_sequestration_df = pd.read_csv(
@@ -112,12 +104,6 @@ def load_landuse_sequestration():
         str
     )
     landuse_sequestration_df.set_index(["Maakunta", "Lyhenne"], inplace=True)
-
-
-def get_area_multipliers_df() -> pd.DataFrame:
-    if (area_multipliers_df is None) or (len(area_multipliers_df) == 0):
-        load_area_multipliers()
-    return area_multipliers_df
 
 
 def get_bm_curve_df() -> pd.DataFrame:
@@ -153,9 +139,7 @@ def get_landuse_sequestration_df() -> pd.DataFrame:
 def unload_files():
     global bm_curve_df
     global soil_curve_df
-    global area_multipliers_df
     global landuse_sequestration_df
     bm_curve_df = None
     soil_curve_df = None
-    area_multipliers_df = None
     landuse_sequestration_df = None
