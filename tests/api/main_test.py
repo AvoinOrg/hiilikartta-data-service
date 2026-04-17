@@ -12,8 +12,6 @@ import pytest_asyncio
 from httpx import AsyncClient
 from pytest import MonkeyPatch
 
-pytest_plugins = ["app.db.connection_mock"]
-
 from app.db import connection
 from app.db.plan import get_plan_by_ui_id
 from app.main import app, get_current_user, get_current_user_optional
@@ -42,15 +40,6 @@ async def _fake_user():
 
 app.dependency_overrides[get_current_user] = _fake_user
 app.dependency_overrides[get_current_user_optional] = _fake_user
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    policy = asyncio.get_event_loop_policy()
-    loop = policy.new_event_loop()
-    asyncio.set_event_loop(loop)
-    yield loop
-    loop.close()
 
 
 @pytest_asyncio.fixture(scope="session")
