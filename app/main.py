@@ -35,12 +35,10 @@ from app.db.plan import (
 )  # Import the methods from plan.py
 from app.db.models.plan import Plan
 from app.utils.logger import get_logger
+from app.calculator.calculator import warm_calculation_cache
 from app.utils.data_loader import (
     DEFAULT_FORESTRY_SCENARIO,
     get_available_forestry_scenarios,
-    load_bm_curves,
-    load_landuse_sequestration,
-    load_soil_curves,
     unload_files,
     validate_forestry_scenario,
 )
@@ -55,10 +53,8 @@ logger = get_logger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup event
-    load_bm_curves()
-    load_soil_curves()
+    warm_calculation_cache()
     get_available_forestry_scenarios()
-    load_landuse_sequestration()
 
     yield
 

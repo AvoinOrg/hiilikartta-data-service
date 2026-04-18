@@ -76,6 +76,35 @@ def test_build_weighted_raster_sum_ha_by_segment_query_binds_grid_to_ha():
     assert "CAST(:grid_to_ha AS double precision)" in str(statement)
 
 
+def test_build_weighted_raster_sum_ha_by_segment_query_uses_bbox_predicate():
+    statement, _ = _build_weighted_raster_sum_ha_by_segment_query(
+        "hiilikartta_maaperanhiili_2023_tcha",
+        f"('{TEST_WKT}')",
+        int(TEST_CRS),
+        simplify_calcs=True,
+    )
+
+    sql = str(statement)
+    assert "ST_ConvexHull(r.rast) && sp.sample_point" in sql
+    assert "AND ST_Intersects(r.rast, sp.sample_point)" in sql
+
+
+def test_build_weighted_raster_sum_ha_by_segment_query_reuses_exact_geometry():
+    statement, _ = _build_weighted_raster_sum_ha_by_segment_query(
+        "hiilikartta_maaperanhiili_2023_tcha",
+        f"('{TEST_WKT}')",
+        int(TEST_CRS),
+        simplify_calcs=False,
+    )
+
+    sql = str(statement)
+    assert sql.count("ST_Intersection((p).geom, g.geom)") == 1
+    assert "segment_intersections AS" in sql
+    assert "ST_PointOnSurface(si.intersect_geom) AS sample_point" in sql
+    assert "WHERE NOT ST_IsEmpty(si.intersect_geom)" in sql
+    assert "ST_ConvexHull(r.rast) && sp.sample_point" in sql
+
+
 def test_build_weighted_raster_sum_ha_query_binds_grid_to_ha():
     statement, params = _build_weighted_raster_sum_ha_query(
         "hiilikartta_maaperanhiili_2023_tcha",

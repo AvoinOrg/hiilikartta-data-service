@@ -101,7 +101,7 @@ Notes:
 - the latest soil calculation uses the 2023 soil raster as the actual soil stock source
 - the vegetation raster remains available as a 2021 GIS source dataset, but it is not used directly in the latest biomass stock scaling path
 
-Repo data files (loaded on API startup via `app/utils/data_loader.py`):
+Repo data files (loaded from `app/utils/data_loader.py` and warmed into curve caches on API + worker startup):
 
 - `data/Hiilikartta_Veg_20260415.csv`
 - `data/Hiilikartta_Soil_20260415.csv`
@@ -118,6 +118,10 @@ GIS operations are intentionally throttled to protect the GIS DB:
 When the GIS DB is at capacity, jobs are re-enqueued later (`GisRetryLaterError`). If a single feature times out, the worker skips that feature and continues.
 
 Large plans switch to a simplified GIS aggregation path. When editing raw SQL in `app/db/gis.py`, prefer `CAST(:param AS type)` over `:param::type` so SQLAlchemy + `asyncpg` bind parameters correctly in worker queries.
+
+The soil-by-segment soil-raster lookup is performance-sensitive: keep the explicit raster bbox predicate (`ST_ConvexHull(r.rast) && sample_point`) so PostgreSQL can use the existing raster GiST index.
+
+Each calculation logs one phase timing summary line with natcode, segment, soil-raster, curve-prep, segment-loop, and final-assembly timings.
 
 ## Running locally (Docker Compose)
 

@@ -336,7 +336,8 @@ def _build_weighted_raster_sum_ha_by_segment_query(
                 LEFT JOIN LATERAL (
                     SELECT ST_Value(r.rast, 1, sp.sample_point)::double precision AS raster_value
                     FROM {raster_table} r
-                    WHERE ST_Intersects(r.rast, sp.sample_point)
+                    WHERE ST_ConvexHull(r.rast) && sp.sample_point
+                      AND ST_Intersects(r.rast, sp.sample_point)
                     LIMIT 1
                 ) rv ON TRUE
             )
@@ -357,14 +358,11 @@ def _build_weighted_raster_sum_ha_by_segment_query(
                     ST_SetSRID(ST_GeomFromText(wkt), :crs) AS geom
                 FROM unnest(array[{wkt_list_str}]) WITH ORDINALITY AS indexed_wkt(wkt, idx)
             ),
-            segment_pixels AS (
+            segment_intersections AS (
                 SELECT
                     g.order_num,
                     (p).val::int AS segment_id,
-                    ST_Intersection((p).geom, g.geom) AS intersect_geom,
-                    (
-                        ST_Area(ST_Intersection((p).geom, g.geom)) / 10000.0
-                    )::double precision AS area_ha
+                    ST_Intersection((p).geom, g.geom) AS intersect_geom
                 FROM luke_mvmisegmentit_id_kokomaa r
                 JOIN input_geoms g
                     ON ST_Intersects(r.rast, g.geom)
@@ -373,6 +371,17 @@ def _build_weighted_raster_sum_ha_by_segment_query(
                     1,
                     TRUE
                 ) AS p
+            ),
+            segment_pixels AS (
+                SELECT
+                    si.order_num,
+                    si.segment_id,
+                    (
+                        ST_Area(si.intersect_geom) / 10000.0
+                    )::double precision AS area_ha,
+                    ST_PointOnSurface(si.intersect_geom) AS sample_point
+                FROM segment_intersections si
+                WHERE NOT ST_IsEmpty(si.intersect_geom)
             ),
             sampled AS (
                 SELECT
@@ -385,14 +394,14 @@ def _build_weighted_raster_sum_ha_by_segment_query(
                     SELECT ST_Value(
                         r.rast,
                         1,
-                        ST_PointOnSurface(sp.intersect_geom)
+                        sp.sample_point
                     )::double precision AS raster_value
                     FROM {raster_table} r
-                    WHERE ST_Intersects(r.rast, ST_PointOnSurface(sp.intersect_geom))
+                    WHERE ST_ConvexHull(r.rast) && sp.sample_point
+                      AND ST_Intersects(r.rast, sp.sample_point)
                     LIMIT 1
                 ) rv ON TRUE
-                WHERE NOT ST_IsEmpty(sp.intersect_geom)
-                  AND sp.area_ha > 0
+                WHERE sp.area_ha > 0
             )
             SELECT
                 order_num,

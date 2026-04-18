@@ -6,7 +6,7 @@ import time
 import uuid
 import traceback
 
-from app.calculator.calculator import CarbonCalculator
+from app.calculator.calculator import CarbonCalculator, warm_calculation_cache
 from app.types.general import CalculationStatus
 from app.db.connection import get_async_context_state_db
 from app.db.errors import GisOperationTimedOutError, GisRetryLaterError
@@ -279,6 +279,7 @@ async def startup(ctx):
     if r.set(lock_key, lock_value, ex=120, nx=True):
         try:
             logger.info("Running start up actions")
+            warm_calculation_cache()
             stats_data = {}
 
             for key in r.scan_iter("saq:job:default:*"):

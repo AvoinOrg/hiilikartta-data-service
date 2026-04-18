@@ -3,6 +3,7 @@
 from bisect import bisect_right
 from datetime import datetime
 import math
+from time import perf_counter
 from typing import Any, Dict, List, NamedTuple, Optional, Tuple, TypedDict
 from warnings import simplefilter
 
@@ -17,6 +18,7 @@ from app.db.gis import (
 )
 from app.utils.data_loader import (
     DEFAULT_FORESTRY_SCENARIO,
+    get_available_forestry_scenarios,
     get_bm_curve_df,
     get_landuse_sequestration_df,
     get_soil_curve_df,
@@ -397,6 +399,23 @@ def _segment_carbon_to_total_co2(segment_area_ha: float, carbon_tcha: float) -> 
     return float(segment_area_ha) * float(carbon_tcha) * c_to_co2
 
 
+def warm_calculation_cache() -> None:
+    bm_curves_df = get_bm_curve_df()
+    soil_curves_df = get_soil_curve_df()
+    get_available_forestry_scenarios()
+    get_landuse_sequestration_df()
+    _build_curve_tables(
+        bm_curves_df,
+        cache_name="biomass",
+        include_max_carbon=True,
+    )
+    _build_curve_tables(
+        soil_curves_df,
+        cache_name="soil",
+        include_max_carbon=False,
+    )
+
+
 class CarbonCalculator:
     def __init__(
         self,
@@ -616,535 +635,574 @@ class CarbonCalculator:
         }
 
     async def calculate(self) -> CalculationResult:
-        bm_curves_df = get_bm_curve_df()
-        soil_curves_df = get_soil_curve_df()
-        sequestration_df = get_landuse_sequestration_df()
-
         if zoning_col not in self.zone.columns:
             raise ValueError(f"Missing required column: {zoning_col}")
 
         wkt_list = self.zone.geometry.to_wkt().tolist()
         area_count = len(wkt_list)
+        total_area_sqm = float(self.zone.area.sum())
+        calculation_started_at = perf_counter()
+        phase_timings: List[Tuple[str, float]] = []
+        calculation_status = "error"
+        calc_mode = "simplified" if self.simplify_calcs else "exact"
 
-        has_any_landuse_cols = any(
-            col in self.zone.columns
-            for col in (
-                [
-                    LANDUSE_BUILT_COL,
-                    LANDUSE_NEW_OPEN_VEG_COL,
-                    LANDUSE_NEW_TREE_VEG_COL,
-                    LANDUSE_EXISTING_COL,
-                ]
-                + [
-                    alias
-                    for aliases in LANDUSE_ALIAS_COLS.values()
-                    for alias in aliases
-                ]
+        try:
+            has_any_landuse_cols = any(
+                col in self.zone.columns
+                for col in (
+                    [
+                        LANDUSE_BUILT_COL,
+                        LANDUSE_NEW_OPEN_VEG_COL,
+                        LANDUSE_NEW_TREE_VEG_COL,
+                        LANDUSE_EXISTING_COL,
+                    ]
+                    + [
+                        alias
+                        for aliases in LANDUSE_ALIAS_COLS.values()
+                        for alias in aliases
+                    ]
+                )
             )
-        )
 
-        built_pcts: List[float] = []
-        new_open_pcts: List[float] = []
-        new_tree_pcts: List[float] = []
-        existing_pcts: List[float] = []
-        soil_change_new_veg_pcts: List[float] = []
+            built_pcts: List[float] = []
+            new_open_pcts: List[float] = []
+            new_tree_pcts: List[float] = []
+            existing_pcts: List[float] = []
+            soil_change_new_veg_pcts: List[float] = []
 
-        for _, row in self.zone.iterrows():
-            if has_any_landuse_cols:
-                built = _get_pct_value(
-                    row, LANDUSE_BUILT_COL, LANDUSE_ALIAS_COLS[LANDUSE_BUILT_COL]
-                )
-                new_open = _get_pct_value(
-                    row,
-                    LANDUSE_NEW_OPEN_VEG_COL,
-                    LANDUSE_ALIAS_COLS[LANDUSE_NEW_OPEN_VEG_COL],
-                )
-                new_tree = _get_pct_value(
-                    row,
-                    LANDUSE_NEW_TREE_VEG_COL,
-                    LANDUSE_ALIAS_COLS[LANDUSE_NEW_TREE_VEG_COL],
-                )
-                existing = _get_pct_value(
-                    row, LANDUSE_EXISTING_COL, LANDUSE_ALIAS_COLS[LANDUSE_EXISTING_COL]
-                )
-                if None in (built, new_open, new_tree, existing):
-                    raise ValueError(
-                        "Missing one or more required landuse percentage columns: "
-                        f"{LANDUSE_BUILT_COL}, {LANDUSE_NEW_OPEN_VEG_COL}, "
-                        f"{LANDUSE_NEW_TREE_VEG_COL}, {LANDUSE_EXISTING_COL}"
+            for _, row in self.zone.iterrows():
+                if has_any_landuse_cols:
+                    built = _get_pct_value(
+                        row, LANDUSE_BUILT_COL, LANDUSE_ALIAS_COLS[LANDUSE_BUILT_COL]
                     )
-                built, new_open, new_tree, existing = _validate_landuse_percentages(
-                    float(built),
-                    float(new_open),
-                    float(new_tree),
-                    float(existing),
+                    new_open = _get_pct_value(
+                        row,
+                        LANDUSE_NEW_OPEN_VEG_COL,
+                        LANDUSE_ALIAS_COLS[LANDUSE_NEW_OPEN_VEG_COL],
+                    )
+                    new_tree = _get_pct_value(
+                        row,
+                        LANDUSE_NEW_TREE_VEG_COL,
+                        LANDUSE_ALIAS_COLS[LANDUSE_NEW_TREE_VEG_COL],
+                    )
+                    existing = _get_pct_value(
+                        row,
+                        LANDUSE_EXISTING_COL,
+                        LANDUSE_ALIAS_COLS[LANDUSE_EXISTING_COL],
+                    )
+                    if None in (built, new_open, new_tree, existing):
+                        raise ValueError(
+                            "Missing one or more required landuse percentage columns: "
+                            f"{LANDUSE_BUILT_COL}, {LANDUSE_NEW_OPEN_VEG_COL}, "
+                            f"{LANDUSE_NEW_TREE_VEG_COL}, {LANDUSE_EXISTING_COL}"
+                        )
+                    built, new_open, new_tree, existing = _validate_landuse_percentages(
+                        float(built),
+                        float(new_open),
+                        float(new_tree),
+                        float(existing),
+                    )
+                else:
+                    built, new_open, new_tree, existing = 0.0, 0.0, 0.0, 100.0
+
+                soil_change_pct = _get_pct_value(
+                    row, SOIL_CHANGE_NEW_VEG_PCT_COL, SOIL_CHANGE_NEW_VEG_PCT_ALIASES
                 )
-            else:
-                built, new_open, new_tree, existing = 0.0, 0.0, 0.0, 100.0
+                if soil_change_pct is None:
+                    soil_change_pct = 0.0
+                if soil_change_pct < 0 or soil_change_pct > 100:
+                    raise ValueError(
+                        f"{SOIL_CHANGE_NEW_VEG_PCT_COL} must be between 0 and 100, got {soil_change_pct}"
+                    )
 
-            soil_change_pct = _get_pct_value(
-                row, SOIL_CHANGE_NEW_VEG_PCT_COL, SOIL_CHANGE_NEW_VEG_PCT_ALIASES
-            )
-            if soil_change_pct is None:
-                soil_change_pct = 0.0
-            if soil_change_pct < 0 or soil_change_pct > 100:
-                raise ValueError(
-                    f"{SOIL_CHANGE_NEW_VEG_PCT_COL} must be between 0 and 100, got {soil_change_pct}"
-                )
+                built_pcts.append(float(built))
+                new_open_pcts.append(float(new_open))
+                new_tree_pcts.append(float(new_tree))
+                existing_pcts.append(float(existing))
+                soil_change_new_veg_pcts.append(float(soil_change_pct))
 
-            built_pcts.append(float(built))
-            new_open_pcts.append(float(new_open))
-            new_tree_pcts.append(float(new_tree))
-            existing_pcts.append(float(existing))
-            soil_change_new_veg_pcts.append(float(soil_change_pct))
+            phase_started_at = perf_counter()
+            natcode_rows = await fetch_natcode_for_regions(wkt_list, crs)
+            phase_timings.append(("natcode_fetch", perf_counter() - phase_started_at))
+            natcode_by_order: Dict[int, str] = {
+                int(order_num): str(natcode) for order_num, natcode in natcode_rows
+            }
+            natcodes: List[Optional[str]] = [
+                natcode_by_order.get(order_num)
+                for order_num in range(1, area_count + 1)
+            ]
+            maakunta_codes: List[Optional[int]] = []
+            for natcode in natcodes:
+                if natcode is None:
+                    maakunta_codes.append(None)
+                    continue
+                try:
+                    maakunta_codes.append(int(str(natcode)))
+                except ValueError:
+                    maakunta_codes.append(None)
 
-        natcode_rows = await fetch_natcode_for_regions(wkt_list, crs)
-        natcode_by_order: Dict[int, str] = {
-            int(order_num): str(natcode) for order_num, natcode in natcode_rows
-        }
-        natcodes: List[Optional[str]] = [
-            natcode_by_order.get(order_num) for order_num in range(1, area_count + 1)
-        ]
-        maakunta_codes: List[Optional[int]] = []
-        for natcode in natcodes:
-            if natcode is None:
-                maakunta_codes.append(None)
-                continue
-            try:
-                maakunta_codes.append(int(str(natcode)))
-            except ValueError:
-                maakunta_codes.append(None)
-
-        segment_area_rows = await fetch_segment_areas_ha_for_regions(
-            wkt_list,
-            crs,
-            simplify_calcs=self.simplify_calcs,
-        )
-        segment_areas_by_order: Dict[int, Dict[int, float]] = {
-            order_num: {} for order_num in range(1, area_count + 1)
-        }
-        for order_num, segment_id, area_ha in segment_area_rows:
-            segment_areas_by_order[int(order_num)][int(segment_id)] = float(area_ha)
-
-        uniq_segment_ids: set[int] = set()
-        for segment_areas in segment_areas_by_order.values():
-            uniq_segment_ids.update(segment_areas.keys())
-
-        variables_dict: Dict[int, Dict[str, Any]] = {}
-        if uniq_segment_ids:
-            variables_dict = await self.get_variables(sorted(uniq_segment_ids))
-
-        soil_segment_sum_rows = (
-            await fetch_weighted_raster_sum_ha_by_segment_for_regions(
-                "hiilikartta_maaperanhiili_2023_tcha",
+            phase_started_at = perf_counter()
+            segment_area_rows = await fetch_segment_areas_ha_for_regions(
                 wkt_list,
                 crs,
                 simplify_calcs=self.simplify_calcs,
             )
-        )
-        soil_segment_sum_by_order: Dict[int, Dict[int, float]] = {
-            order_num: {} for order_num in range(1, area_count + 1)
-        }
-        for order_num, segment_id, sum_weighted_ha in soil_segment_sum_rows:
-            soil_segment_sum_by_order[int(order_num)][int(segment_id)] = float(
-                sum_weighted_ha or 0.0
+            phase_timings.append(
+                ("segment_area_fetch", perf_counter() - phase_started_at)
             )
+            segment_areas_by_order: Dict[int, Dict[int, float]] = {
+                order_num: {} for order_num in range(1, area_count + 1)
+            }
+            for order_num, segment_id, area_ha in segment_area_rows:
+                segment_areas_by_order[int(order_num)][int(segment_id)] = float(area_ha)
 
-        base_cols = ["geometry", zoning_col]
-        if "id" in self.zone.columns:
-            base_cols.insert(0, "id")
-        calcs_df = self.zone[base_cols].copy()
-        calcs_df["area"] = self.zone.geometry.area
-        calcs_df["area_ha"] = calcs_df["area"] * sqm_to_ha
-        calcs_df[LANDUSE_BUILT_COL] = built_pcts
-        calcs_df[LANDUSE_NEW_OPEN_VEG_COL] = new_open_pcts
-        calcs_df[LANDUSE_NEW_TREE_VEG_COL] = new_tree_pcts
-        calcs_df[LANDUSE_EXISTING_COL] = existing_pcts
-        calcs_df[SOIL_CHANGE_NEW_VEG_PCT_COL] = soil_change_new_veg_pcts
-        calcs_df["natcode"] = natcodes
-        calcs_df.set_crs(epsg=3067, inplace=True)
-        calcs_df.set_geometry("geometry", inplace=True)
+            uniq_segment_ids: set[int] = set()
+            for segment_areas in segment_areas_by_order.values():
+                uniq_segment_ids.update(segment_areas.keys())
 
-        current_year = datetime.now().year
-        years_int = _build_reporting_years(current_year)
+            phase_started_at = perf_counter()
+            variables_dict: Dict[int, Dict[str, Any]] = {}
+            if uniq_segment_ids:
+                variables_dict = await self.get_variables(sorted(uniq_segment_ids))
+            phase_timings.append(("variables_fetch", perf_counter() - phase_started_at))
 
-        existing_fracs = [pct / 100.0 for pct in existing_pcts]
-        new_open_fracs = [pct / 100.0 for pct in new_open_pcts]
-        new_tree_fracs = [pct / 100.0 for pct in new_tree_pcts]
-        new_veg_fracs = [
-            (new_open_pcts[i] + new_tree_pcts[i]) / 100.0 for i in range(area_count)
-        ]
-        soil_retention_fracs = [
-            1.0 - (soil_change_new_veg_pcts[i] / 100.0) for i in range(area_count)
-        ]
-
-        veg_open_coeffs: List[float] = []
-        veg_tree_coeffs: List[float] = []
-        soil_open_coeffs: List[float] = []
-        soil_tree_coeffs: List[float] = []
-        zoning_codes: List[str] = []
-
-        for idx in range(area_count):
-            maakunta = maakunta_codes[idx]
-            code = str(self.zone.iloc[idx][zoning_col]).strip()
-            zoning_codes.append(code)
-            k_veg_open = 0.0
-            k_veg_tree = 0.0
-            k_soil_open = 0.0
-            k_soil_tree = 0.0
-            if maakunta is not None:
-                key = (maakunta, code)
-                if key in sequestration_df.index:
-                    coeff_row = sequestration_df.loc[key]
-                    if isinstance(coeff_row, pd.DataFrame):
-                        coeff_row = coeff_row.iloc[0]
-                    k_veg_open = _coerce_float(
-                        coeff_row.get(SEQUESTRATION_COL_VEG_OPEN)
-                    )
-                    k_veg_tree = _coerce_float(
-                        coeff_row.get(SEQUESTRATION_COL_VEG_TREE)
-                    )
-                    k_soil_open = _coerce_float(
-                        coeff_row.get(SEQUESTRATION_COL_SOIL_OPEN)
-                    )
-                    k_soil_tree = _coerce_float(
-                        coeff_row.get(SEQUESTRATION_COL_SOIL_TREE)
-                    )
-
-                    # Source values are t_C/ha/yr; downstream math expects tCO2/ha/yr.
-                    k_veg_open = (
-                        0.0 if k_veg_open is None else float(k_veg_open) * c_to_co2
-                    )
-                    k_veg_tree = (
-                        0.0 if k_veg_tree is None else float(k_veg_tree) * c_to_co2
-                    )
-                    k_soil_open = (
-                        0.0 if k_soil_open is None else float(k_soil_open) * c_to_co2
-                    )
-                    k_soil_tree = (
-                        0.0 if k_soil_tree is None else float(k_soil_tree) * c_to_co2
-                    )
-
-            veg_open_coeffs.append(k_veg_open)
-            veg_tree_coeffs.append(k_veg_tree)
-            soil_open_coeffs.append(k_soil_open)
-            soil_tree_coeffs.append(k_soil_tree)
-
-        veg_changed_rate_co2_per_year: List[float] = []
-        soil_changed_rate_co2_per_year: List[float] = []
-        for idx in range(area_count):
-            area_ha = float(calcs_df.iloc[idx]["area_ha"] or 0.0)
-            veg_tree_share = new_tree_fracs[idx]
-            if zoning_codes[idx] in POWERLINE_ZONING_CODES:
-                veg_tree_share = 0.0
-            veg_rate = area_ha * (
-                new_open_fracs[idx] * veg_open_coeffs[idx]
-                + veg_tree_share * veg_tree_coeffs[idx]
+            phase_started_at = perf_counter()
+            soil_segment_sum_rows = (
+                await fetch_weighted_raster_sum_ha_by_segment_for_regions(
+                    "hiilikartta_maaperanhiili_2023_tcha",
+                    wkt_list,
+                    crs,
+                    simplify_calcs=self.simplify_calcs,
+                )
             )
-            soil_rate = area_ha * (
-                new_open_fracs[idx] * soil_open_coeffs[idx]
-                + new_tree_fracs[idx] * soil_tree_coeffs[idx]
+            phase_timings.append(
+                ("soil_segment_fetch", perf_counter() - phase_started_at)
             )
-            veg_changed_rate_co2_per_year.append(float(veg_rate))
-            soil_changed_rate_co2_per_year.append(float(soil_rate))
-
-        variables_base_year = 2021
-        soil_raster_base_year = 2023
-        _, biomass_curves_by_key, biomass_init_ages_by_key = _build_curve_tables(
-            bm_curves_df,
-            cache_name="biomass",
-            include_max_carbon=True,
-        )
-        _, soil_curves_by_key, soil_init_ages_by_key = _build_curve_tables(
-            soil_curves_df,
-            cache_name="soil",
-            include_max_carbon=False,
-        )
-
-        veg_existing_total_co2_by_order: Dict[int, Dict[int, float]] = {
-            order_num: {year: 0.0 for year in years_int}
-            for order_num in range(1, area_count + 1)
-        }
-        soil_existing_total_co2_by_order: Dict[int, Dict[int, float]] = {
-            order_num: {year: 0.0 for year in years_int}
-            for order_num in range(1, area_count + 1)
-        }
-        soil_base_2023_co2_by_order: Dict[int, float] = {
-            order_num: 0.0 for order_num in range(1, area_count + 1)
-        }
-
-        veg_powerline_tree_delta_co2_by_order: Dict[int, Dict[int, float]] = {
-            order_num: {year: 0.0 for year in years_int}
-            for order_num in range(1, area_count + 1)
-        }
-
-        zoning_codes_by_order: Dict[int, str] = {
-            order_num: str(self.zone.iloc[order_num - 1][zoning_col]).strip()
-            for order_num in range(1, area_count + 1)
-        }
-        is_powerline_zone_by_order: Dict[int, bool] = {
-            order_num: zoning_codes_by_order[order_num] in POWERLINE_ZONING_CODES
-            for order_num in range(1, area_count + 1)
-        }
-
-        for order_num, segment_areas in segment_areas_by_order.items():
-            for segment_id, segment_area_ha in segment_areas.items():
-                variables = variables_dict.get(segment_id)
-                if not variables:
-                    continue
-
-                age_base = _get_int_var(variables, ["Age", "age"])
-                if age_base is None:
-                    continue
-
-                curve_key = _get_curve_key(variables, self.forestry_scenario)
-                if curve_key is None:
-                    continue
-
-                biomass_match = _match_curve_info(
-                    biomass_curves_by_key, biomass_init_ages_by_key, curve_key, age_base
+            soil_segment_sum_by_order: Dict[int, Dict[int, float]] = {
+                order_num: {} for order_num in range(1, area_count + 1)
+            }
+            for order_num, segment_id, sum_weighted_ha in soil_segment_sum_rows:
+                soil_segment_sum_by_order[int(order_num)][int(segment_id)] = float(
+                    sum_weighted_ha or 0.0
                 )
-                soil_match = _match_curve_info(
-                    soil_curves_by_key, soil_init_ages_by_key, curve_key, age_base
-                )
-                use_cut_zero_curve = False
-                cut_curve_applied = False
-                if biomass_match is not None:
-                    selected_init_age, curve_info = biomass_match
 
-                    segment_carbon = _get_float_var(variables, ["Carbon", "carbon"])
+            base_cols = ["geometry", zoning_col]
+            if "id" in self.zone.columns:
+                base_cols.insert(0, "id")
+            calcs_df = self.zone[base_cols].copy()
+            calcs_df["area"] = self.zone.geometry.area
+            calcs_df["area_ha"] = calcs_df["area"] * sqm_to_ha
+            calcs_df[LANDUSE_BUILT_COL] = built_pcts
+            calcs_df[LANDUSE_NEW_OPEN_VEG_COL] = new_open_pcts
+            calcs_df[LANDUSE_NEW_TREE_VEG_COL] = new_tree_pcts
+            calcs_df[LANDUSE_EXISTING_COL] = existing_pcts
+            calcs_df[SOIL_CHANGE_NEW_VEG_PCT_COL] = soil_change_new_veg_pcts
+            calcs_df["natcode"] = natcodes
+            calcs_df.set_crs(epsg=3067, inplace=True)
+            calcs_df.set_geometry("geometry", inplace=True)
 
-                    if self.forestry_scenario == 1 and segment_carbon is not None:
-                        expected_curve_value = _curve_value_at_offset(
-                            curve_info.series,
-                            _relative_curve_offset(
-                                age_base,
-                                selected_init_age,
-                                variables_base_year,
-                                variables_base_year,
-                            ),
-                        )
-                        use_cut_zero_curve = _should_use_cut_curve(
-                            segment_carbon,
-                            curve_info,
-                            expected_curve_value,
-                        )
-                    biomass_match, soil_match, cut_curve_applied = (
-                        _switch_both_matches_to_zero_curve(
-                            biomass_match,
-                            soil_match,
-                            biomass_curves_by_key=biomass_curves_by_key,
-                            soil_curves_by_key=soil_curves_by_key,
-                            key=curve_key,
-                            enabled=use_cut_zero_curve,
-                        )
-                    )
-                    selected_init_age, curve_info = biomass_match
-                    biomass_resets_to_year0 = cut_curve_applied
+            current_year = datetime.now().year
+            years_int = _build_reporting_years(current_year)
 
-                    if segment_carbon is not None:
-                        biomass_curve_base = _curve_value_at_offset(
-                            curve_info.series,
-                            _relative_curve_offset(
-                                age_base,
-                                selected_init_age,
-                                variables_base_year,
-                                variables_base_year,
-                                reset_to_year0=biomass_resets_to_year0,
-                            ),
-                        )
-                        for year in years_int:
-                            year_offset = _relative_curve_offset(
-                                age_base,
-                                selected_init_age,
-                                year,
-                                variables_base_year,
-                                reset_to_year0=biomass_resets_to_year0,
-                            )
-                            biomass_curve_year = _curve_value_at_offset(
-                                curve_info.series, year_offset
-                            )
-                            biomass_scale = _curve_scale_factor(
-                                biomass_curve_base, biomass_curve_year
-                            )
-                            veg_existing_total_co2_by_order[order_num][
-                                year
-                            ] += _segment_carbon_to_total_co2(
-                                segment_area_ha,
-                                segment_carbon * biomass_scale,
-                            )
+            existing_fracs = [pct / 100.0 for pct in existing_pcts]
+            new_open_fracs = [pct / 100.0 for pct in new_open_pcts]
+            new_tree_fracs = [pct / 100.0 for pct in new_tree_pcts]
+            new_veg_fracs = [
+                (new_open_pcts[i] + new_tree_pcts[i]) / 100.0 for i in range(area_count)
+            ]
+            soil_retention_fracs = [
+                1.0 - (soil_change_new_veg_pcts[i] / 100.0) for i in range(area_count)
+            ]
 
-                if soil_match is not None:
-                    soil_init_age, soil_curve_info = soil_match
-                    soil_resets_to_year0 = bool(
-                        cut_curve_applied and soil_init_age == 0
-                    )
-                    soil_segment_sum = soil_segment_sum_by_order.get(order_num, {}).get(
-                        segment_id
-                    )
-                    if soil_segment_sum is not None and float(segment_area_ha) > 0:
-                        soil_carbon_2023_tcha = float(soil_segment_sum) / float(
-                            segment_area_ha
-                        )
-                        soil_base_2023_co2_by_order[
-                            order_num
-                        ] += _segment_carbon_to_total_co2(
-                            segment_area_ha,
-                            soil_carbon_2023_tcha,
-                        )
-                        soil_curve_base = _curve_value_at_offset(
-                            soil_curve_info.series,
-                            _relative_curve_offset(
-                                age_base,
-                                soil_init_age,
-                                soil_raster_base_year,
-                                variables_base_year,
-                                reset_to_year0=soil_resets_to_year0,
-                            ),
-                        )
-                        for year in years_int:
-                            year_offset = _relative_curve_offset(
-                                age_base,
-                                soil_init_age,
-                                year,
-                                variables_base_year,
-                                reset_to_year0=soil_resets_to_year0,
-                            )
-                            soil_curve_year = _curve_value_at_offset(
-                                soil_curve_info.series, year_offset
-                            )
-                            soil_scale = _curve_scale_factor(
-                                soil_curve_base, soil_curve_year
-                            )
-                            soil_existing_total_co2_by_order[order_num][
-                                year
-                            ] += _segment_carbon_to_total_co2(
-                                segment_area_ha,
-                                soil_carbon_2023_tcha * soil_scale,
-                            )
+            phase_started_at = perf_counter()
+            bm_curves_df = get_bm_curve_df()
+            soil_curves_df = get_soil_curve_df()
+            sequestration_df = get_landuse_sequestration_df()
+            _, biomass_curves_by_key, biomass_init_ages_by_key = _build_curve_tables(
+                bm_curves_df,
+                cache_name="biomass",
+                include_max_carbon=True,
+            )
+            _, soil_curves_by_key, soil_init_ages_by_key = _build_curve_tables(
+                soil_curves_df,
+                cache_name="soil",
+                include_max_carbon=False,
+            )
+            phase_timings.append(("curve_prep", perf_counter() - phase_started_at))
 
-                if not is_powerline_zone_by_order.get(order_num, False):
-                    continue
-
-                powerline_curve_key = _get_curve_key(
-                    variables,
-                    self.forestry_scenario,
-                    maingroup_override=POWERLINE_BIOMASS_MAINGROUP,
-                )
-                if powerline_curve_key is None:
-                    continue
-
-                powerline_match = _match_curve_info(
-                    biomass_curves_by_key,
-                    biomass_init_ages_by_key,
-                    powerline_curve_key,
-                    age_base,
-                )
-                if powerline_match is None:
-                    continue
-
-                _, powerline_curve_info = powerline_match
-                base_tree_value = _curve_value_at_offset(powerline_curve_info.series, 0)
-                for year in years_int:
-                    age_since_plan = max(0, int(year) - int(current_year))
-                    tree_value_year = _curve_value_at_offset(
-                        powerline_curve_info.series, age_since_plan
-                    )
-                    tree_delta_per_ha = tree_value_year - base_tree_value
-                    veg_powerline_tree_delta_co2_by_order[order_num][year] += (
-                        float(segment_area_ha) * float(tree_delta_per_ha) * c_to_co2
-                    )
-
-        sum_cols: List[str] = []
-
-        veg_base_col = "bio_carbon_total"
-        soil_base_col = "ground_carbon_total"
-
-        for year in years_int:
-            delta_years = max(0, int(year) - int(current_year))
-            veg_nochange_vals: List[float] = []
-            veg_planned_vals: List[float] = []
-            soil_nochange_vals: List[float] = []
-            soil_planned_vals: List[float] = []
+            veg_open_coeffs: List[float] = []
+            veg_tree_coeffs: List[float] = []
+            soil_open_coeffs: List[float] = []
+            soil_tree_coeffs: List[float] = []
+            zoning_codes: List[str] = []
 
             for idx in range(area_count):
-                order_num = idx + 1
-                veg_nochange = veg_existing_total_co2_by_order.get(order_num, {}).get(
-                    year, 0.0
+                maakunta = maakunta_codes[idx]
+                code = str(self.zone.iloc[idx][zoning_col]).strip()
+                zoning_codes.append(code)
+                k_veg_open = 0.0
+                k_veg_tree = 0.0
+                k_soil_open = 0.0
+                k_soil_tree = 0.0
+                if maakunta is not None:
+                    key = (maakunta, code)
+                    if key in sequestration_df.index:
+                        coeff_row = sequestration_df.loc[key]
+                        if isinstance(coeff_row, pd.DataFrame):
+                            coeff_row = coeff_row.iloc[0]
+                        k_veg_open = _coerce_float(
+                            coeff_row.get(SEQUESTRATION_COL_VEG_OPEN)
+                        )
+                        k_veg_tree = _coerce_float(
+                            coeff_row.get(SEQUESTRATION_COL_VEG_TREE)
+                        )
+                        k_soil_open = _coerce_float(
+                            coeff_row.get(SEQUESTRATION_COL_SOIL_OPEN)
+                        )
+                        k_soil_tree = _coerce_float(
+                            coeff_row.get(SEQUESTRATION_COL_SOIL_TREE)
+                        )
+
+                        # Source values are t_C/ha/yr; downstream math expects tCO2/ha/yr.
+                        k_veg_open = (
+                            0.0 if k_veg_open is None else float(k_veg_open) * c_to_co2
+                        )
+                        k_veg_tree = (
+                            0.0 if k_veg_tree is None else float(k_veg_tree) * c_to_co2
+                        )
+                        k_soil_open = (
+                            0.0
+                            if k_soil_open is None
+                            else float(k_soil_open) * c_to_co2
+                        )
+                        k_soil_tree = (
+                            0.0
+                            if k_soil_tree is None
+                            else float(k_soil_tree) * c_to_co2
+                        )
+
+                veg_open_coeffs.append(k_veg_open)
+                veg_tree_coeffs.append(k_veg_tree)
+                soil_open_coeffs.append(k_soil_open)
+                soil_tree_coeffs.append(k_soil_tree)
+
+            veg_changed_rate_co2_per_year: List[float] = []
+            soil_changed_rate_co2_per_year: List[float] = []
+            for idx in range(area_count):
+                area_ha = float(calcs_df.iloc[idx]["area_ha"] or 0.0)
+                veg_tree_share = new_tree_fracs[idx]
+                if zoning_codes[idx] in POWERLINE_ZONING_CODES:
+                    veg_tree_share = 0.0
+                veg_rate = area_ha * (
+                    new_open_fracs[idx] * veg_open_coeffs[idx]
+                    + veg_tree_share * veg_tree_coeffs[idx]
                 )
-                soil_nochange = soil_existing_total_co2_by_order.get(order_num, {}).get(
-                    year, 0.0
+                soil_rate = area_ha * (
+                    new_open_fracs[idx] * soil_open_coeffs[idx]
+                    + new_tree_fracs[idx] * soil_tree_coeffs[idx]
                 )
-                powerline_tree_delta = veg_powerline_tree_delta_co2_by_order.get(
-                    order_num, {}
-                ).get(year, 0.0)
+                veg_changed_rate_co2_per_year.append(float(veg_rate))
+                soil_changed_rate_co2_per_year.append(float(soil_rate))
 
-                veg_nochange_vals.append(veg_nochange)
-                soil_nochange_vals.append(soil_nochange)
+            variables_base_year = 2021
+            soil_raster_base_year = 2023
+            veg_existing_total_co2_by_order: Dict[int, Dict[int, float]] = {
+                order_num: {year: 0.0 for year in years_int}
+                for order_num in range(1, area_count + 1)
+            }
+            soil_existing_total_co2_by_order: Dict[int, Dict[int, float]] = {
+                order_num: {year: 0.0 for year in years_int}
+                for order_num in range(1, area_count + 1)
+            }
+            soil_base_2023_co2_by_order: Dict[int, float] = {
+                order_num: 0.0 for order_num in range(1, area_count + 1)
+            }
+            veg_powerline_tree_delta_co2_by_order: Dict[int, Dict[int, float]] = {
+                order_num: {year: 0.0 for year in years_int}
+                for order_num in range(1, area_count + 1)
+            }
 
-                if int(year) == int(current_year):
-                    veg_planned_vals.append(veg_nochange)
-                    soil_planned_vals.append(soil_nochange)
-                    continue
+            zoning_codes_by_order: Dict[int, str] = {
+                order_num: str(self.zone.iloc[order_num - 1][zoning_col]).strip()
+                for order_num in range(1, area_count + 1)
+            }
+            is_powerline_zone_by_order: Dict[int, bool] = {
+                order_num: zoning_codes_by_order[order_num] in POWERLINE_ZONING_CODES
+                for order_num in range(1, area_count + 1)
+            }
 
-                veg_planned = (
-                    existing_fracs[idx] * veg_nochange
-                    + veg_changed_rate_co2_per_year[idx] * delta_years
+            phase_started_at = perf_counter()
+            for order_num, segment_areas in segment_areas_by_order.items():
+                for segment_id, segment_area_ha in segment_areas.items():
+                    variables = variables_dict.get(segment_id)
+                    if not variables:
+                        continue
+
+                    age_base = _get_int_var(variables, ["Age", "age"])
+                    if age_base is None:
+                        continue
+
+                    curve_key = _get_curve_key(variables, self.forestry_scenario)
+                    if curve_key is None:
+                        continue
+
+                    biomass_match = _match_curve_info(
+                        biomass_curves_by_key,
+                        biomass_init_ages_by_key,
+                        curve_key,
+                        age_base,
+                    )
+                    soil_match = _match_curve_info(
+                        soil_curves_by_key, soil_init_ages_by_key, curve_key, age_base
+                    )
+                    use_cut_zero_curve = False
+                    cut_curve_applied = False
+                    if biomass_match is not None:
+                        selected_init_age, curve_info = biomass_match
+                        segment_carbon = _get_float_var(variables, ["Carbon", "carbon"])
+
+                        if self.forestry_scenario == 1 and segment_carbon is not None:
+                            expected_curve_value = _curve_value_at_offset(
+                                curve_info.series,
+                                _relative_curve_offset(
+                                    age_base,
+                                    selected_init_age,
+                                    variables_base_year,
+                                    variables_base_year,
+                                ),
+                            )
+                            use_cut_zero_curve = _should_use_cut_curve(
+                                segment_carbon,
+                                curve_info,
+                                expected_curve_value,
+                            )
+                        biomass_match, soil_match, cut_curve_applied = (
+                            _switch_both_matches_to_zero_curve(
+                                biomass_match,
+                                soil_match,
+                                biomass_curves_by_key=biomass_curves_by_key,
+                                soil_curves_by_key=soil_curves_by_key,
+                                key=curve_key,
+                                enabled=use_cut_zero_curve,
+                            )
+                        )
+                        selected_init_age, curve_info = biomass_match
+                        biomass_resets_to_year0 = cut_curve_applied
+
+                        if segment_carbon is not None:
+                            biomass_curve_base = _curve_value_at_offset(
+                                curve_info.series,
+                                _relative_curve_offset(
+                                    age_base,
+                                    selected_init_age,
+                                    variables_base_year,
+                                    variables_base_year,
+                                    reset_to_year0=biomass_resets_to_year0,
+                                ),
+                            )
+                            for year in years_int:
+                                year_offset = _relative_curve_offset(
+                                    age_base,
+                                    selected_init_age,
+                                    year,
+                                    variables_base_year,
+                                    reset_to_year0=biomass_resets_to_year0,
+                                )
+                                biomass_curve_year = _curve_value_at_offset(
+                                    curve_info.series, year_offset
+                                )
+                                biomass_scale = _curve_scale_factor(
+                                    biomass_curve_base, biomass_curve_year
+                                )
+                                veg_existing_total_co2_by_order[order_num][
+                                    year
+                                ] += _segment_carbon_to_total_co2(
+                                    segment_area_ha,
+                                    segment_carbon * biomass_scale,
+                                )
+
+                    if soil_match is not None:
+                        soil_init_age, soil_curve_info = soil_match
+                        soil_resets_to_year0 = bool(
+                            cut_curve_applied and soil_init_age == 0
+                        )
+                        soil_segment_sum = soil_segment_sum_by_order.get(
+                            order_num, {}
+                        ).get(segment_id)
+                        if soil_segment_sum is not None and float(segment_area_ha) > 0:
+                            soil_carbon_2023_tcha = float(soil_segment_sum) / float(
+                                segment_area_ha
+                            )
+                            soil_base_2023_co2_by_order[
+                                order_num
+                            ] += _segment_carbon_to_total_co2(
+                                segment_area_ha,
+                                soil_carbon_2023_tcha,
+                            )
+                            soil_curve_base = _curve_value_at_offset(
+                                soil_curve_info.series,
+                                _relative_curve_offset(
+                                    age_base,
+                                    soil_init_age,
+                                    soil_raster_base_year,
+                                    variables_base_year,
+                                    reset_to_year0=soil_resets_to_year0,
+                                ),
+                            )
+                            for year in years_int:
+                                year_offset = _relative_curve_offset(
+                                    age_base,
+                                    soil_init_age,
+                                    year,
+                                    variables_base_year,
+                                    reset_to_year0=soil_resets_to_year0,
+                                )
+                                soil_curve_year = _curve_value_at_offset(
+                                    soil_curve_info.series, year_offset
+                                )
+                                soil_scale = _curve_scale_factor(
+                                    soil_curve_base, soil_curve_year
+                                )
+                                soil_existing_total_co2_by_order[order_num][
+                                    year
+                                ] += _segment_carbon_to_total_co2(
+                                    segment_area_ha,
+                                    soil_carbon_2023_tcha * soil_scale,
+                                )
+
+                    if not is_powerline_zone_by_order.get(order_num, False):
+                        continue
+
+                    powerline_curve_key = _get_curve_key(
+                        variables,
+                        self.forestry_scenario,
+                        maingroup_override=POWERLINE_BIOMASS_MAINGROUP,
+                    )
+                    if powerline_curve_key is None:
+                        continue
+
+                    powerline_match = _match_curve_info(
+                        biomass_curves_by_key,
+                        biomass_init_ages_by_key,
+                        powerline_curve_key,
+                        age_base,
+                    )
+                    if powerline_match is None:
+                        continue
+
+                    _, powerline_curve_info = powerline_match
+                    base_tree_value = _curve_value_at_offset(
+                        powerline_curve_info.series, 0
+                    )
+                    for year in years_int:
+                        age_since_plan = max(0, int(year) - int(current_year))
+                        tree_value_year = _curve_value_at_offset(
+                            powerline_curve_info.series, age_since_plan
+                        )
+                        tree_delta_per_ha = tree_value_year - base_tree_value
+                        veg_powerline_tree_delta_co2_by_order[order_num][year] += (
+                            float(segment_area_ha) * float(tree_delta_per_ha) * c_to_co2
+                        )
+            phase_timings.append(("segment_loop", perf_counter() - phase_started_at))
+
+            phase_started_at = perf_counter()
+            sum_cols: List[str] = []
+            veg_base_col = "bio_carbon_total"
+            soil_base_col = "ground_carbon_total"
+
+            for year in years_int:
+                delta_years = max(0, int(year) - int(current_year))
+                veg_nochange_vals: List[float] = []
+                veg_planned_vals: List[float] = []
+                soil_nochange_vals: List[float] = []
+                soil_planned_vals: List[float] = []
+
+                for idx in range(area_count):
+                    order_num = idx + 1
+                    veg_nochange = veg_existing_total_co2_by_order.get(
+                        order_num, {}
+                    ).get(year, 0.0)
+                    soil_nochange = soil_existing_total_co2_by_order.get(
+                        order_num, {}
+                    ).get(year, 0.0)
+                    powerline_tree_delta = veg_powerline_tree_delta_co2_by_order.get(
+                        order_num, {}
+                    ).get(year, 0.0)
+
+                    veg_nochange_vals.append(veg_nochange)
+                    soil_nochange_vals.append(soil_nochange)
+
+                    if int(year) == int(current_year):
+                        veg_planned_vals.append(veg_nochange)
+                        soil_planned_vals.append(soil_nochange)
+                        continue
+
+                    veg_planned = (
+                        existing_fracs[idx] * veg_nochange
+                        + veg_changed_rate_co2_per_year[idx] * delta_years
+                    )
+                    if is_powerline_zone_by_order.get(order_num, False):
+                        veg_planned += new_tree_fracs[idx] * powerline_tree_delta
+                    veg_planned_vals.append(veg_planned)
+                    soil_planned_vals.append(
+                        existing_fracs[idx] * soil_nochange
+                        + new_veg_fracs[idx]
+                        * soil_retention_fracs[idx]
+                        * soil_base_2023_co2_by_order[order_num]
+                        + soil_changed_rate_co2_per_year[idx] * delta_years
+                    )
+
+                veg_nochange_col = f"{veg_base_col}_nochange_{year}"
+                veg_planned_col = f"{veg_base_col}_planned_{year}"
+                soil_nochange_col = f"{soil_base_col}_nochange_{year}"
+                soil_planned_col = f"{soil_base_col}_planned_{year}"
+
+                calcs_df[veg_nochange_col] = veg_nochange_vals
+                calcs_df[veg_planned_col] = veg_planned_vals
+                calcs_df[soil_nochange_col] = soil_nochange_vals
+                calcs_df[soil_planned_col] = soil_planned_vals
+
+                sum_cols.extend(
+                    [
+                        veg_nochange_col,
+                        veg_planned_col,
+                        soil_nochange_col,
+                        soil_planned_col,
+                    ]
                 )
-                if is_powerline_zone_by_order.get(order_num, False):
-                    veg_planned += new_tree_fracs[idx] * powerline_tree_delta
-                veg_planned_vals.append(veg_planned)
-                soil_planned_vals.append(
-                    existing_fracs[idx] * soil_nochange
-                    + new_veg_fracs[idx]
-                    * soil_retention_fracs[idx]
-                    * soil_base_2023_co2_by_order[order_num]
-                    + soil_changed_rate_co2_per_year[idx] * delta_years
-                )
 
-            veg_nochange_col = f"{veg_base_col}_nochange_{year}"
-            veg_planned_col = f"{veg_base_col}_planned_{year}"
-            soil_nochange_col = f"{soil_base_col}_nochange_{year}"
-            soil_planned_col = f"{soil_base_col}_planned_{year}"
+            for col in sum_cols:
+                new_col = col.replace("_total_", "_ha_")
+                calcs_df[new_col] = calcs_df[col] / calcs_df["area_ha"]
 
-            calcs_df[veg_nochange_col] = veg_nochange_vals
-            calcs_df[veg_planned_col] = veg_planned_vals
-            calcs_df[soil_nochange_col] = soil_nochange_vals
-            calcs_df[soil_planned_col] = soil_planned_vals
-
-            sum_cols.extend(
-                [veg_nochange_col, veg_planned_col, soil_nochange_col, soil_planned_col]
+            self.zone = calcs_df
+            totals_data = await self.calculate_totals()
+            return_data: CalculationResult = {
+                "areas": calcs_df.to_crs(epsg=4326).to_json(),
+                "totals": totals_data["totals"],
+                "metadata": {
+                    **totals_data["metadata"],
+                    "forestry_scenario": self.forestry_scenario,
+                },
+            }
+            phase_timings.append(("final_assembly", perf_counter() - phase_started_at))
+            calculation_status = "ok"
+            return return_data
+        finally:
+            phase_summary = ", ".join(
+                f"{phase_name}={phase_seconds:.3f}s"
+                for phase_name, phase_seconds in phase_timings
             )
-
-        for col in sum_cols:
-            new_col = col.replace("_total_", "_ha_")
-            calcs_df[new_col] = calcs_df[col] / calcs_df["area_ha"]
-
-        # all_columns = all_columns + total_columns
-
-        # sum_cols = [col for col in all_columns if "grid_sum" in col]
-        # sum_result = calcs_df[sum_cols].sum()
-        # cols_to_process = [
-        #     col for col in calcs_df.columns if "planned" in col or "nochange" in col
-        # ]
-        # calcs_df[cols_to_process] = calcs_df[cols_to_process].apply(
-        #     pd.to_numeric, errors="coerce"
-        # )
-
-        # calcs_df[cols_to_multiply] = calcs_df[cols_to_multiply] * c_to_co2
-        self.zone = calcs_df
-        totals_data = await self.calculate_totals()
-
-        return_data: CalculationResult = {
-            "areas": calcs_df.to_crs(epsg=4326).to_json(),
-            "totals": totals_data["totals"],
-            "metadata": {
-                **totals_data["metadata"],
-                "forestry_scenario": self.forestry_scenario,
-            },
-        }
-
-        return return_data
+            logger.info(
+                "Calculation timing summary: status=%s scenario=%s features=%s total_area_sqm=%.2f mode=%s total=%.3fs phases=[%s]",
+                calculation_status,
+                self.forestry_scenario,
+                area_count,
+                total_area_sqm,
+                calc_mode,
+                perf_counter() - calculation_started_at,
+                phase_summary,
+            )
 
         # area_das = await self.get_area_das(self.zone, variables_ds)
 
