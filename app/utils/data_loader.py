@@ -9,16 +9,12 @@ logger = get_logger(__name__)
 
 data_path = Path("data")
 
-# Bump this when a new dump of the Hiilikartta curve / coefficient tables is
-# dropped into `data/`. All dated filenames are derived from this single value.
-HIILIKARTTA_DATA_VERSION = "20260420"
-
 DEFAULT_FORESTRY_SCENARIO = 1
-BIOMASS_CURVE_FILE = data_path / f"Hiilikartta_Veg_{HIILIKARTTA_DATA_VERSION}.csv"
-SOIL_CURVE_FILE = data_path / f"Hiilikartta_Soil_{HIILIKARTTA_DATA_VERSION}.csv"
+BIOMASS_CURVE_FILE = data_path / "Hiilikartta_Veg_20260415.csv"
+SOIL_CURVE_FILE = data_path / "Hiilikartta_Soil_20260415.csv"
 LANDUSE_SEQUESTRATION_FILE = (
     data_path
-    / f"Hiilikartta_Kasvillisuuden_ja_maaperan_hiilensidonta_kayttotarkoitusluokittain_{HIILIKARTTA_DATA_VERSION}.csv"
+    / "Hiilikartta_Kasvillisuuden_ja_maaperan_hiilensidonta_kayttotarkoitusluokittain_20260420.csv"
 )
 CURVE_KEY_COLUMNS = [
     "Scen",
