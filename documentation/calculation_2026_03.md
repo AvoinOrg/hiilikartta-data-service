@@ -13,7 +13,7 @@ The final curve tables and the regional changed-land coefficients are dated. The
 - `data/Hiilikartta_Soil_<date>.csv`
 - `data/Hiilikartta_Kasvillisuuden_ja_maaperan_hiilensidonta_kayttotarkoitusluokittain_<date>.csv`
 
-At the time of writing the effective `<date>` is `20260415`.
+At the time of writing the effective `<date>` is `20260420`.
 
 Terminology:
 

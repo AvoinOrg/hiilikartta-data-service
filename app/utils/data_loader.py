@@ -11,7 +11,7 @@ data_path = Path("data")
 
 # Bump this when a new dump of the Hiilikartta curve / coefficient tables is
 # dropped into `data/`. All dated filenames are derived from this single value.
-HIILIKARTTA_DATA_VERSION = "20260415"
+HIILIKARTTA_DATA_VERSION = "20260420"
 
 DEFAULT_FORESTRY_SCENARIO = 1
 BIOMASS_CURVE_FILE = data_path / f"Hiilikartta_Veg_{HIILIKARTTA_DATA_VERSION}.csv"
