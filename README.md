@@ -101,7 +101,7 @@ Notes:
 - the latest soil calculation uses the 2023 soil raster as the actual soil stock source
 - the vegetation raster remains available as a 2021 GIS source dataset, but it is not used directly in the latest biomass stock scaling path
 
-Repo data files (loaded from `app/utils/data_loader.py` and warmed into curve caches on API + worker startup):
+Runtime data files (loaded from `/app/data` by `app/utils/data_loader.py` and warmed into curve caches on API + worker startup). In production, `/app/data` is the private `${DATA_PATH}` bind mount configured in Dokploy:
 
 - `data/Hiilikartta_Veg_20260415.csv`
 - `data/Hiilikartta_Soil_20260415.csv`
@@ -194,12 +194,15 @@ docker compose exec app-dev poetry run alembic upgrade head
 
 To support running multiple stacks on the same Docker host (e.g. `prod` + `test`) without Redis cross-talk, the worker + Redis live on an internal per-stack network (`app-net`), and only the API is attached to `proxy-net`.
 
+The prod API and worker run from the built image, not from a bind-mounted repository checkout. Dokploy should rebuild the image on deploy (`pull_policy: build`, `build.no_cache: true`), while private CSV inputs are still supplied through `${DATA_PATH}:/app/data`.
+
 By default, prod containers refuse to start if the state DB is not at the latest Alembic revision. To run migrations automatically on API startup, set `STATE_DB_MIGRATION_MODE=upgrade` (the worker is check-only and never runs migrations).
 
 Key env vars:
 
 - `DOMAIN` (Traefik host rule)
 - `APP_PORT` (host port for the API container)
+- `DATA_PATH` (private host directory mounted to `/app/data`; must contain the active Hiilikartta CSV inputs)
 - `REDIS_DATA_PATH` (Redis persistence path for prod)
 - `STATE_DB_MIGRATION_MODE` (`check` to refuse start; `upgrade` to run `alembic upgrade head` on API startup)
 

@@ -80,6 +80,7 @@ Authoritative list: `.env.template`. Highlights:
 - **GIS DB**: `GIS_PG_*` (must point to a PostGIS DB with required datasets)
 - **Auth (Zitadel)**: `ZITADEL_DOMAIN`, `ZITADEL_CLIENT_ID`, `ZITADEL_CLIENT_SECRET`
 - **GIS throttling**: `GIS_LOCAL_MAX_CONCURRENT`, `GIS_DISTRIBUTED_MAX_CONCURRENT`, `GIS_SLOT_TTL`, `GIS_STATEMENT_TIMEOUT_SECONDS`
+- **Private runtime data mount**: `DATA_PATH` (prod/Dokploy host directory mounted to `/app/data`)
 - **Analytics (optional, prod)**: `UMAMI_ENABLED`, `UMAMI_HOST_URL`, `UMAMI_WEBSITE_ID`
 
 ## Data dependencies (don’t “simplify” away)
@@ -94,9 +95,9 @@ Used by `app/db/gis.py` and described in `documentation/calculation_2026_03.md`:
 - `luke_mvmisegmentit_muuttujat_kokomaa`
 - `maakunta` (`geom`, `natcode`)
 
-### Repo files under `data/`
+### Runtime files under `/app/data`
 
-Loaded from `app/utils/data_loader.py` and warmed into curve caches on API + worker startup:
+Loaded from `app/utils/data_loader.py` and warmed into curve caches on API + worker startup. In prod/Dokploy, `/app/data` is the private `${DATA_PATH}` bind mount; these CSVs are not committed public data.
 
 - `data/Hiilikartta_Veg_20260415.csv`
 - `data/Hiilikartta_Soil_20260415.csv`
@@ -105,6 +106,7 @@ Loaded from `app/utils/data_loader.py` and warmed into curve caches on API + wor
 ## Gotchas / agent tips
 
 - **Worker is required**: the API only enqueues jobs; without `worker-*` nothing completes.
+- **Prod code comes from the image**: `docker-compose.prod.yml` intentionally does not bind-mount the repo over `/app`; Dokploy rebuilds the image, while `${DATA_PATH}` supplies private CSVs.
 - **Responses are gzip**: read endpoints set `Content-Encoding: gzip`; use `curl --compressed` in examples.
 - **Frontend responses include plan metadata**: `forestry_scenario` is returned at the response level and in finished-report metadata blocks.
 - **Final curve tables are single files**: the selected scenario comes from the `Scen` column in `Hiilikartta_Veg_20260415.csv` / `Hiilikartta_Soil_20260415.csv`; current shipped data exposes scenarios `1..3`.
