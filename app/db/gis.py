@@ -298,6 +298,167 @@ async def fetch_segment_areas_ha_for_regions(
         raise
 
 
+def _build_segment_areas_and_raster_sum_query(
+    raster_table: str,
+    wkt_list_str: str,
+    crs_int: int,
+    simplify_calcs: bool,
+) -> tuple[Any, dict[str, float | int]]:
+    """Fused CTE producing per-(region, segment) area_ha and Σ(value*area_ha).
+
+    Scans the segment raster once, polygonizes pixels, and samples the
+    supplied per-hectare raster at each pixel — replacing a separate
+    segment-area query + weighted-sum query.
+    """
+    if simplify_calcs:
+        statement = text(f"""
+            WITH input_geoms AS (
+                SELECT
+                    idx AS order_num,
+                    ST_SetSRID(ST_GeomFromText(wkt), :crs) AS geom
+                FROM unnest(array[{wkt_list_str}]) WITH ORDINALITY AS indexed_wkt(wkt, idx)
+            ),
+            segment_pixels AS (
+                SELECT
+                    g.order_num,
+                    (p).val::int AS segment_id,
+                    ST_PointOnSurface((p).geom) AS sample_point
+                FROM luke_mvmisegmentit_id_kokomaa r
+                JOIN input_geoms g
+                    ON ST_Intersects(r.rast, g.geom)
+                CROSS JOIN LATERAL ST_PixelAsPolygons(
+                    ST_Clip(r.rast, g.geom, touched => FALSE),
+                    1,
+                    TRUE
+                ) AS p
+            ),
+            sampled AS (
+                SELECT
+                    sp.order_num,
+                    sp.segment_id,
+                    CAST(:grid_to_ha AS double precision) AS area_ha,
+                    COALESCE(rv.raster_value, 0.0)::double precision AS raster_value
+                FROM segment_pixels sp
+                LEFT JOIN LATERAL (
+                    SELECT ST_Value(r.rast, 1, sp.sample_point)::double precision AS raster_value
+                    FROM {raster_table} r
+                    WHERE ST_ConvexHull(r.rast) && sp.sample_point
+                      AND ST_Intersects(r.rast, sp.sample_point)
+                    LIMIT 1
+                ) rv ON TRUE
+            )
+            SELECT
+                order_num,
+                segment_id,
+                SUM(area_ha)::double precision AS area_ha,
+                SUM(raster_value * area_ha)::double precision AS sum_weighted_ha
+            FROM sampled
+            GROUP BY order_num, segment_id
+            ORDER BY order_num, segment_id;
+            """)
+        params: dict[str, float | int] = {"crs": crs_int, "grid_to_ha": GRID_TO_HA}
+    else:
+        statement = text(f"""
+            WITH input_geoms AS (
+                SELECT
+                    idx AS order_num,
+                    ST_SetSRID(ST_GeomFromText(wkt), :crs) AS geom
+                FROM unnest(array[{wkt_list_str}]) WITH ORDINALITY AS indexed_wkt(wkt, idx)
+            ),
+            segment_intersections AS (
+                SELECT
+                    g.order_num,
+                    (p).val::int AS segment_id,
+                    ST_Intersection((p).geom, g.geom) AS intersect_geom
+                FROM luke_mvmisegmentit_id_kokomaa r
+                JOIN input_geoms g
+                    ON ST_Intersects(r.rast, g.geom)
+                CROSS JOIN LATERAL ST_PixelAsPolygons(
+                    ST_Clip(r.rast, g.geom, touched => TRUE),
+                    1,
+                    TRUE
+                ) AS p
+            ),
+            segment_pixels AS (
+                SELECT
+                    si.order_num,
+                    si.segment_id,
+                    (
+                        ST_Area(si.intersect_geom) / 10000.0
+                    )::double precision AS area_ha,
+                    ST_PointOnSurface(si.intersect_geom) AS sample_point
+                FROM segment_intersections si
+                WHERE NOT ST_IsEmpty(si.intersect_geom)
+            ),
+            sampled AS (
+                SELECT
+                    sp.order_num,
+                    sp.segment_id,
+                    sp.area_ha,
+                    COALESCE(rv.raster_value, 0.0)::double precision AS raster_value
+                FROM segment_pixels sp
+                LEFT JOIN LATERAL (
+                    SELECT ST_Value(
+                        r.rast,
+                        1,
+                        sp.sample_point
+                    )::double precision AS raster_value
+                    FROM {raster_table} r
+                    WHERE ST_ConvexHull(r.rast) && sp.sample_point
+                      AND ST_Intersects(r.rast, sp.sample_point)
+                    LIMIT 1
+                ) rv ON TRUE
+                WHERE sp.area_ha > 0
+            )
+            SELECT
+                order_num,
+                segment_id,
+                SUM(area_ha)::double precision AS area_ha,
+                SUM(raster_value * area_ha)::double precision AS sum_weighted_ha
+            FROM sampled
+            GROUP BY order_num, segment_id
+            ORDER BY order_num, segment_id;
+            """)
+        params = {"crs": crs_int}
+
+    return statement, params
+
+
+async def fetch_segment_areas_and_raster_sum_for_regions(
+    raster_table: str,
+    wkts: List[str],
+    crs: str,
+    db_session: Optional[AsyncSession] = None,
+    simplify_calcs: bool = False,
+):
+    """Return per-(region, segment) (area_ha, Σ(raster_value * area_ha)) in one query.
+
+    Replaces paired calls to `fetch_segment_areas_ha_for_regions` and
+    `fetch_weighted_raster_sum_ha_by_segment_for_regions` when both are
+    needed for the same regions (e.g. soil carbon).
+    """
+    crs_int = int(crs)
+
+    try:
+        wkt_list_str = ",".join([f"('{wkt}')" for wkt in wkts])
+        statement, params = _build_segment_areas_and_raster_sum_query(
+            raster_table,
+            wkt_list_str,
+            crs_int,
+            simplify_calcs,
+        )
+
+        async with _get_throttled_session(db_session) as session:
+            result = await session.execute(statement, params)
+            rows = result.fetchall()
+
+        return rows
+
+    except SQLAlchemyError as ex:
+        logger.exception(ex)
+        raise
+
+
 def _build_weighted_raster_sum_ha_by_segment_query(
     raster_table: str,
     wkt_list_str: str,

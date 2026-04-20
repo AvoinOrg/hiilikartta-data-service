@@ -1,4 +1,4 @@
-# import asyncio
+import asyncio
 # import tempfile
 from bisect import bisect_right
 from datetime import datetime
@@ -8,13 +8,13 @@ from typing import Any, Dict, List, NamedTuple, Optional, Tuple, TypedDict
 from warnings import simplefilter
 
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 
 from app.db.gis import (
     fetch_natcode_for_regions,
-    fetch_segment_areas_ha_for_regions,
+    fetch_segment_areas_and_raster_sum_for_regions,
     fetch_variables_for_ids,
-    fetch_weighted_raster_sum_ha_by_segment_for_regions,
 )
 from app.utils.data_loader import (
     DEFAULT_FORESTRY_SCENARIO,
@@ -148,7 +148,7 @@ CurveKey = Tuple[int, int, int, int, int, int, int]
 
 
 class CurveInfo(NamedTuple):
-    series: List[float]
+    series: np.ndarray
     max_carbon: Optional[float]
 
 
@@ -165,11 +165,19 @@ def _year_col_num(col: str) -> int:
         return -1
 
 
-def _curve_value_at_offset(series: List[float], offset_years: int) -> float:
-    if not series:
+def _curve_value_at_offset(series, offset_years: int) -> float:
+    if len(series) == 0:
         return 0.0
     clamped_offset = max(0, min(int(offset_years), len(series) - 1))
     return float(series[clamped_offset])
+
+
+def _curve_values_at_offsets(series: np.ndarray, offsets: np.ndarray) -> np.ndarray:
+    if len(series) == 0:
+        return np.zeros(offsets.shape, dtype=np.float64)
+    max_idx = len(series) - 1
+    clamped = np.clip(offsets, 0, max_idx)
+    return np.asarray(series, dtype=np.float64)[clamped]
 
 
 def _relative_curve_offset(
@@ -292,10 +300,11 @@ def _build_curve_tables(
         except Exception:
             continue
 
-        series = []
+        series_list: List[float] = []
         for col in year_cols:
             value = _coerce_float(row.get(col))
-            series.append(0.0 if value is None else float(value))
+            series_list.append(0.0 if value is None else float(value))
+        series = np.asarray(series_list, dtype=np.float64)
 
         max_carbon = None
         if include_max_carbon:
@@ -722,8 +731,19 @@ class CarbonCalculator:
                 soil_change_new_veg_pcts.append(float(soil_change_pct))
 
             phase_started_at = perf_counter()
-            natcode_rows = await fetch_natcode_for_regions(wkt_list, crs)
-            phase_timings.append(("natcode_fetch", perf_counter() - phase_started_at))
+            natcode_rows, segment_and_soil_rows = await asyncio.gather(
+                fetch_natcode_for_regions(wkt_list, crs),
+                fetch_segment_areas_and_raster_sum_for_regions(
+                    "hiilikartta_maaperanhiili_2023_tcha",
+                    wkt_list,
+                    crs,
+                    simplify_calcs=self.simplify_calcs,
+                ),
+            )
+            phase_timings.append(
+                ("natcode_and_segment_fetch", perf_counter() - phase_started_at)
+            )
+
             natcode_by_order: Dict[int, str] = {
                 int(order_num): str(natcode) for order_num, natcode in natcode_rows
             }
@@ -741,20 +761,19 @@ class CarbonCalculator:
                 except ValueError:
                     maakunta_codes.append(None)
 
-            phase_started_at = perf_counter()
-            segment_area_rows = await fetch_segment_areas_ha_for_regions(
-                wkt_list,
-                crs,
-                simplify_calcs=self.simplify_calcs,
-            )
-            phase_timings.append(
-                ("segment_area_fetch", perf_counter() - phase_started_at)
-            )
             segment_areas_by_order: Dict[int, Dict[int, float]] = {
                 order_num: {} for order_num in range(1, area_count + 1)
             }
-            for order_num, segment_id, area_ha in segment_area_rows:
-                segment_areas_by_order[int(order_num)][int(segment_id)] = float(area_ha)
+            soil_segment_sum_by_order: Dict[int, Dict[int, float]] = {
+                order_num: {} for order_num in range(1, area_count + 1)
+            }
+            for order_num, segment_id, area_ha, sum_weighted_ha in segment_and_soil_rows:
+                order_int = int(order_num)
+                segment_int = int(segment_id)
+                segment_areas_by_order[order_int][segment_int] = float(area_ha)
+                soil_segment_sum_by_order[order_int][segment_int] = float(
+                    sum_weighted_ha or 0.0
+                )
 
             uniq_segment_ids: set[int] = set()
             for segment_areas in segment_areas_by_order.values():
@@ -765,26 +784,6 @@ class CarbonCalculator:
             if uniq_segment_ids:
                 variables_dict = await self.get_variables(sorted(uniq_segment_ids))
             phase_timings.append(("variables_fetch", perf_counter() - phase_started_at))
-
-            phase_started_at = perf_counter()
-            soil_segment_sum_rows = (
-                await fetch_weighted_raster_sum_ha_by_segment_for_regions(
-                    "hiilikartta_maaperanhiili_2023_tcha",
-                    wkt_list,
-                    crs,
-                    simplify_calcs=self.simplify_calcs,
-                )
-            )
-            phase_timings.append(
-                ("soil_segment_fetch", perf_counter() - phase_started_at)
-            )
-            soil_segment_sum_by_order: Dict[int, Dict[int, float]] = {
-                order_num: {} for order_num in range(1, area_count + 1)
-            }
-            for order_num, segment_id, sum_weighted_ha in soil_segment_sum_rows:
-                soil_segment_sum_by_order[int(order_num)][int(segment_id)] = float(
-                    sum_weighted_ha or 0.0
-                )
 
             base_cols = ["geometry", zoning_col]
             if "id" in self.zone.columns:
@@ -906,21 +905,13 @@ class CarbonCalculator:
 
             variables_base_year = 2021
             soil_raster_base_year = 2023
-            veg_existing_total_co2_by_order: Dict[int, Dict[int, float]] = {
-                order_num: {year: 0.0 for year in years_int}
-                for order_num in range(1, area_count + 1)
-            }
-            soil_existing_total_co2_by_order: Dict[int, Dict[int, float]] = {
-                order_num: {year: 0.0 for year in years_int}
-                for order_num in range(1, area_count + 1)
-            }
-            soil_base_2023_co2_by_order: Dict[int, float] = {
-                order_num: 0.0 for order_num in range(1, area_count + 1)
-            }
-            veg_powerline_tree_delta_co2_by_order: Dict[int, Dict[int, float]] = {
-                order_num: {year: 0.0 for year in years_int}
-                for order_num in range(1, area_count + 1)
-            }
+            years_arr = np.asarray(years_int, dtype=np.int64)
+            n_years = years_arr.size
+
+            veg_existing_mat = np.zeros((area_count, n_years), dtype=np.float64)
+            soil_existing_mat = np.zeros((area_count, n_years), dtype=np.float64)
+            soil_base_2023_arr = np.zeros(area_count, dtype=np.float64)
+            veg_powerline_mat = np.zeros((area_count, n_years), dtype=np.float64)
 
             zoning_codes_by_order: Dict[int, str] = {
                 order_num: str(self.zone.iloc[order_num - 1][zoning_col]).strip()
@@ -932,7 +923,13 @@ class CarbonCalculator:
             }
 
             phase_started_at = perf_counter()
+            years_minus_base = years_arr - variables_base_year
+            age_since_plan_arr = np.maximum(0, years_arr - int(current_year))
+
             for order_num, segment_areas in segment_areas_by_order.items():
+                order_idx = order_num - 1
+                is_powerline = is_powerline_zone_by_order.get(order_num, False)
+
                 for segment_id, segment_area_ha in segment_areas.items():
                     variables = variables_dict.get(segment_id)
                     if not variables:
@@ -957,6 +954,8 @@ class CarbonCalculator:
                     )
                     use_cut_zero_curve = False
                     cut_curve_applied = False
+                    segment_area_ha_f = float(segment_area_ha)
+
                     if biomass_match is not None:
                         selected_init_age, curve_info = biomass_match
                         segment_carbon = _get_float_var(variables, ["Carbon", "carbon"])
@@ -990,36 +989,29 @@ class CarbonCalculator:
                         biomass_resets_to_year0 = cut_curve_applied
 
                         if segment_carbon is not None:
+                            if biomass_resets_to_year0:
+                                biomass_base_offset = 0
+                                biomass_year_offsets = years_minus_base
+                            else:
+                                shift = age_base - selected_init_age
+                                biomass_base_offset = shift
+                                biomass_year_offsets = years_minus_base + shift
                             biomass_curve_base = _curve_value_at_offset(
-                                curve_info.series,
-                                _relative_curve_offset(
-                                    age_base,
-                                    selected_init_age,
-                                    variables_base_year,
-                                    variables_base_year,
-                                    reset_to_year0=biomass_resets_to_year0,
-                                ),
+                                curve_info.series, biomass_base_offset
                             )
-                            for year in years_int:
-                                year_offset = _relative_curve_offset(
-                                    age_base,
-                                    selected_init_age,
-                                    year,
-                                    variables_base_year,
-                                    reset_to_year0=biomass_resets_to_year0,
-                                )
-                                biomass_curve_year = _curve_value_at_offset(
-                                    curve_info.series, year_offset
-                                )
-                                biomass_scale = _curve_scale_factor(
-                                    biomass_curve_base, biomass_curve_year
-                                )
-                                veg_existing_total_co2_by_order[order_num][
-                                    year
-                                ] += _segment_carbon_to_total_co2(
-                                    segment_area_ha,
-                                    segment_carbon * biomass_scale,
-                                )
+                            biomass_curve_years = _curve_values_at_offsets(
+                                curve_info.series, biomass_year_offsets
+                            )
+                            if biomass_curve_base > 0.0:
+                                biomass_scale = biomass_curve_years / biomass_curve_base
+                            else:
+                                biomass_scale = np.ones(n_years, dtype=np.float64)
+                            veg_existing_mat[order_idx] += (
+                                segment_area_ha_f
+                                * segment_carbon
+                                * biomass_scale
+                                * c_to_co2
+                            )
 
                     if soil_match is not None:
                         soil_init_age, soil_curve_info = soil_match
@@ -1029,48 +1021,40 @@ class CarbonCalculator:
                         soil_segment_sum = soil_segment_sum_by_order.get(
                             order_num, {}
                         ).get(segment_id)
-                        if soil_segment_sum is not None and float(segment_area_ha) > 0:
-                            soil_carbon_2023_tcha = float(soil_segment_sum) / float(
-                                segment_area_ha
+                        if soil_segment_sum is not None and segment_area_ha_f > 0:
+                            soil_carbon_2023_tcha = (
+                                float(soil_segment_sum) / segment_area_ha_f
                             )
-                            soil_base_2023_co2_by_order[
-                                order_num
-                            ] += _segment_carbon_to_total_co2(
-                                segment_area_ha,
-                                soil_carbon_2023_tcha,
+                            soil_base_2023_arr[order_idx] += (
+                                segment_area_ha_f * soil_carbon_2023_tcha * c_to_co2
                             )
+                            if soil_resets_to_year0:
+                                soil_base_offset = soil_raster_base_year - variables_base_year
+                                soil_year_offsets = years_minus_base
+                            else:
+                                shift = age_base - soil_init_age
+                                soil_base_offset = (
+                                    shift + (soil_raster_base_year - variables_base_year)
+                                )
+                                soil_year_offsets = years_minus_base + shift
                             soil_curve_base = _curve_value_at_offset(
-                                soil_curve_info.series,
-                                _relative_curve_offset(
-                                    age_base,
-                                    soil_init_age,
-                                    soil_raster_base_year,
-                                    variables_base_year,
-                                    reset_to_year0=soil_resets_to_year0,
-                                ),
+                                soil_curve_info.series, soil_base_offset
                             )
-                            for year in years_int:
-                                year_offset = _relative_curve_offset(
-                                    age_base,
-                                    soil_init_age,
-                                    year,
-                                    variables_base_year,
-                                    reset_to_year0=soil_resets_to_year0,
-                                )
-                                soil_curve_year = _curve_value_at_offset(
-                                    soil_curve_info.series, year_offset
-                                )
-                                soil_scale = _curve_scale_factor(
-                                    soil_curve_base, soil_curve_year
-                                )
-                                soil_existing_total_co2_by_order[order_num][
-                                    year
-                                ] += _segment_carbon_to_total_co2(
-                                    segment_area_ha,
-                                    soil_carbon_2023_tcha * soil_scale,
-                                )
+                            soil_curve_years = _curve_values_at_offsets(
+                                soil_curve_info.series, soil_year_offsets
+                            )
+                            if soil_curve_base > 0.0:
+                                soil_scale = soil_curve_years / soil_curve_base
+                            else:
+                                soil_scale = np.ones(n_years, dtype=np.float64)
+                            soil_existing_mat[order_idx] += (
+                                segment_area_ha_f
+                                * soil_carbon_2023_tcha
+                                * soil_scale
+                                * c_to_co2
+                            )
 
-                    if not is_powerline_zone_by_order.get(order_num, False):
+                    if not is_powerline:
                         continue
 
                     powerline_curve_key = _get_curve_key(
@@ -1094,74 +1078,69 @@ class CarbonCalculator:
                     base_tree_value = _curve_value_at_offset(
                         powerline_curve_info.series, 0
                     )
-                    for year in years_int:
-                        age_since_plan = max(0, int(year) - int(current_year))
-                        tree_value_year = _curve_value_at_offset(
-                            powerline_curve_info.series, age_since_plan
-                        )
-                        tree_delta_per_ha = tree_value_year - base_tree_value
-                        veg_powerline_tree_delta_co2_by_order[order_num][year] += (
-                            float(segment_area_ha) * float(tree_delta_per_ha) * c_to_co2
-                        )
+                    tree_value_years = _curve_values_at_offsets(
+                        powerline_curve_info.series, age_since_plan_arr
+                    )
+                    veg_powerline_mat[order_idx] += (
+                        segment_area_ha_f
+                        * (tree_value_years - base_tree_value)
+                        * c_to_co2
+                    )
             phase_timings.append(("segment_loop", perf_counter() - phase_started_at))
 
             phase_started_at = perf_counter()
-            sum_cols: List[str] = []
             veg_base_col = "bio_carbon_total"
             soil_base_col = "ground_carbon_total"
 
-            for year in years_int:
-                delta_years = max(0, int(year) - int(current_year))
-                veg_nochange_vals: List[float] = []
-                veg_planned_vals: List[float] = []
-                soil_nochange_vals: List[float] = []
-                soil_planned_vals: List[float] = []
+            existing_fracs_arr = np.asarray(existing_fracs, dtype=np.float64)
+            new_tree_fracs_arr = np.asarray(new_tree_fracs, dtype=np.float64)
+            new_veg_fracs_arr = np.asarray(new_veg_fracs, dtype=np.float64)
+            soil_retention_fracs_arr = np.asarray(soil_retention_fracs, dtype=np.float64)
+            veg_rate_arr = np.asarray(veg_changed_rate_co2_per_year, dtype=np.float64)
+            soil_rate_arr = np.asarray(soil_changed_rate_co2_per_year, dtype=np.float64)
+            is_powerline_arr = np.asarray(
+                [is_powerline_zone_by_order.get(i + 1, False) for i in range(area_count)],
+                dtype=bool,
+            )
+            delta_years_arr = np.maximum(0, years_arr - int(current_year)).astype(
+                np.float64
+            )
+            is_current_year_mask = years_arr == int(current_year)
 
-                for idx in range(area_count):
-                    order_num = idx + 1
-                    veg_nochange = veg_existing_total_co2_by_order.get(
-                        order_num, {}
-                    ).get(year, 0.0)
-                    soil_nochange = soil_existing_total_co2_by_order.get(
-                        order_num, {}
-                    ).get(year, 0.0)
-                    powerline_tree_delta = veg_powerline_tree_delta_co2_by_order.get(
-                        order_num, {}
-                    ).get(year, 0.0)
+            veg_planned_mat = (
+                existing_fracs_arr[:, None] * veg_existing_mat
+                + veg_rate_arr[:, None] * delta_years_arr[None, :]
+            )
+            veg_planned_mat = veg_planned_mat + np.where(
+                is_powerline_arr[:, None],
+                new_tree_fracs_arr[:, None] * veg_powerline_mat,
+                0.0,
+            )
+            soil_planned_mat = (
+                existing_fracs_arr[:, None] * soil_existing_mat
+                + (new_veg_fracs_arr * soil_retention_fracs_arr)[:, None]
+                * soil_base_2023_arr[:, None]
+                + soil_rate_arr[:, None] * delta_years_arr[None, :]
+            )
+            if is_current_year_mask.any():
+                veg_planned_mat[:, is_current_year_mask] = veg_existing_mat[
+                    :, is_current_year_mask
+                ]
+                soil_planned_mat[:, is_current_year_mask] = soil_existing_mat[
+                    :, is_current_year_mask
+                ]
 
-                    veg_nochange_vals.append(veg_nochange)
-                    soil_nochange_vals.append(soil_nochange)
-
-                    if int(year) == int(current_year):
-                        veg_planned_vals.append(veg_nochange)
-                        soil_planned_vals.append(soil_nochange)
-                        continue
-
-                    veg_planned = (
-                        existing_fracs[idx] * veg_nochange
-                        + veg_changed_rate_co2_per_year[idx] * delta_years
-                    )
-                    if is_powerline_zone_by_order.get(order_num, False):
-                        veg_planned += new_tree_fracs[idx] * powerline_tree_delta
-                    veg_planned_vals.append(veg_planned)
-                    soil_planned_vals.append(
-                        existing_fracs[idx] * soil_nochange
-                        + new_veg_fracs[idx]
-                        * soil_retention_fracs[idx]
-                        * soil_base_2023_co2_by_order[order_num]
-                        + soil_changed_rate_co2_per_year[idx] * delta_years
-                    )
-
+            new_cols: Dict[str, np.ndarray] = {}
+            sum_cols: List[str] = []
+            for year_idx, year in enumerate(years_int):
                 veg_nochange_col = f"{veg_base_col}_nochange_{year}"
                 veg_planned_col = f"{veg_base_col}_planned_{year}"
                 soil_nochange_col = f"{soil_base_col}_nochange_{year}"
                 soil_planned_col = f"{soil_base_col}_planned_{year}"
-
-                calcs_df[veg_nochange_col] = veg_nochange_vals
-                calcs_df[veg_planned_col] = veg_planned_vals
-                calcs_df[soil_nochange_col] = soil_nochange_vals
-                calcs_df[soil_planned_col] = soil_planned_vals
-
+                new_cols[veg_nochange_col] = veg_existing_mat[:, year_idx]
+                new_cols[veg_planned_col] = veg_planned_mat[:, year_idx]
+                new_cols[soil_nochange_col] = soil_existing_mat[:, year_idx]
+                new_cols[soil_planned_col] = soil_planned_mat[:, year_idx]
                 sum_cols.extend(
                     [
                         veg_nochange_col,
@@ -1171,9 +1150,14 @@ class CarbonCalculator:
                     ]
                 )
 
-            for col in sum_cols:
-                new_col = col.replace("_total_", "_ha_")
-                calcs_df[new_col] = calcs_df[col] / calcs_df["area_ha"]
+            area_ha_arr = calcs_df["area_ha"].to_numpy(dtype=np.float64)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                for col in list(sum_cols):
+                    per_ha_col = col.replace("_total_", "_ha_")
+                    new_cols[per_ha_col] = new_cols[col] / area_ha_arr
+
+            new_cols_df = pd.DataFrame(new_cols, index=calcs_df.index)
+            calcs_df = calcs_df.join(new_cols_df)
 
             self.zone = calcs_df
             totals_data = await self.calculate_totals()
