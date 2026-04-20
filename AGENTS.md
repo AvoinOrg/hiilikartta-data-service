@@ -98,8 +98,8 @@ Used by `app/db/gis.py` and described in `documentation/calculation_2026_03.md`:
 
 Loaded from `app/utils/data_loader.py` and warmed into curve caches on API + worker startup:
 
-- `data/Hiilikartta_Veg_20260420.csv`
-- `data/Hiilikartta_Soil_20260420.csv`
+- `data/Hiilikartta_Veg_20260415.csv`
+- `data/Hiilikartta_Soil_20260415.csv`
 - `data/Hiilikartta_Kasvillisuuden_ja_maaperan_hiilensidonta_kayttotarkoitusluokittain_20260420.csv`
 
 ## Gotchas / agent tips
@@ -107,7 +107,7 @@ Loaded from `app/utils/data_loader.py` and warmed into curve caches on API + wor
 - **Worker is required**: the API only enqueues jobs; without `worker-*` nothing completes.
 - **Responses are gzip**: read endpoints set `Content-Encoding: gzip`; use `curl --compressed` in examples.
 - **Frontend responses include plan metadata**: `forestry_scenario` is returned at the response level and in finished-report metadata blocks.
-- **Final curve tables are single files**: the selected scenario comes from the `Scen` column in `Hiilikartta_Veg_20260420.csv` / `Hiilikartta_Soil_20260420.csv`; current shipped data exposes scenarios `1..3`.
+- **Final curve tables are single files**: the selected scenario comes from the `Scen` column in `Hiilikartta_Veg_20260415.csv` / `Hiilikartta_Soil_20260415.csv`; current shipped data exposes scenarios `1..3`.
 - **Biomass actual stock comes from segment data**: the latest calculation uses `luke_mvmisegmentit_muuttujat_kokomaa.Carbon` as the actual biomass stock source and for scenario-1 cut detection, not the vegetation raster.
 - **Soil actual stock comes from the 2023 raster**: the latest calculation scales per-segment weighted values from `hiilikartta_maaperanhiili_2023_tcha`.
 - **Forecast years are capped at 2080**: the output years are `current_year` plus milestone years `2030..2080` that are strictly greater than `current_year`.

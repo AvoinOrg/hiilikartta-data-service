@@ -103,8 +103,8 @@ Notes:
 
 Repo data files (loaded from `app/utils/data_loader.py` and warmed into curve caches on API + worker startup):
 
-- `data/Hiilikartta_Veg_20260420.csv`
-- `data/Hiilikartta_Soil_20260420.csv`
+- `data/Hiilikartta_Veg_20260415.csv`
+- `data/Hiilikartta_Soil_20260415.csv`
 - `data/Hiilikartta_Kasvillisuuden_ja_maaperan_hiilensidonta_kayttotarkoitusluokittain_20260420.csv`
 
 ### Operational behavior (GIS throttling)
