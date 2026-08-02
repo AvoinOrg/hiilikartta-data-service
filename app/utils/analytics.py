@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 from functools import lru_cache
-from typing import Optional
+from typing import Mapping, Optional
 
 import httpx
 
@@ -13,6 +13,11 @@ logger = get_logger(__name__)
 
 DEFAULT_USER_AGENT = "Hiilikartta-Data-Service/1.0"
 HIILIKARTTA_HOSTNAME = "hiilikartta.avoin.org"
+
+
+def resolve_user_agent(headers: Mapping[str, str]) -> Optional[str]:
+    """Prefer an explicitly forwarded browser user agent over the request header."""
+    return headers.get("X-User-Agent") or headers.get("User-Agent")
 
 
 @lru_cache

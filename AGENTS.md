@@ -12,6 +12,8 @@ changes, update both `README.md` and this file.
   `UMAMI_WEBSITE_ID` in the server environment.
 - Missing or incomplete configuration disables event delivery.
 - Calculation requests must not depend on frontend analytics identifiers.
-- `X-User-Agent` is optional and has a service fallback.
+- `X-User-Agent` is optional. Fall back to the request's standard `User-Agent`
+  before using the service user agent so Umami does not classify browser-driven
+  calculations as bot traffic.
 - Analytics network failures and non-success responses must not fail a
   calculation request.

@@ -38,7 +38,11 @@ from app.utils.logger import get_logger
 from app.utils.data_loader import load_area_multipliers, load_bm_curves, unload_files
 from app.saq_worker import queue
 from app.auth.validator import ZitadelIntrospectTokenValidator, ValidatorError
-from app.utils.analytics import track_calculation_initiated, track_calculation_new_plan
+from app.utils.analytics import (
+    resolve_user_agent,
+    track_calculation_initiated,
+    track_calculation_new_plan,
+)
 
 logger = get_logger(__name__)
 
@@ -237,7 +241,7 @@ async def calculate(
     await queue.enqueue("calculate_piece", ui_id=str(ui_id), retries=3, timeout=172800)
 
     # Analytics are best-effort and require no frontend-provided identifiers.
-    user_agent = request.headers.get("X-User-Agent")
+    user_agent = resolve_user_agent(request.headers)
     await track_calculation_initiated(user_agent=user_agent)
     if is_new_plan:
         await track_calculation_new_plan(user_agent=user_agent)

@@ -52,5 +52,6 @@ to enable this integration. Analytics stay disabled if the variables are absent
 or incomplete, and delivery errors do not fail calculation requests.
 
 The frontend does not need to provide an analytics or website identifier. It
-may forward the browser user agent in `X-User-Agent`; the service uses a default
-user agent when that optional header is missing.
+may forward the browser user agent in `X-User-Agent`; when that optional header
+is missing, the service forwards the calculation request's standard
+`User-Agent`. A service user agent is used only when neither header is present.

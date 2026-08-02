@@ -19,6 +19,21 @@ class MockAsyncClient:
         return False
 
 
+def test_forwarded_user_agent_takes_precedence():
+    headers = {
+        "X-User-Agent": "Forwarded browser",
+        "User-Agent": "Request browser",
+    }
+
+    assert analytics.resolve_user_agent(headers) == "Forwarded browser"
+
+
+def test_request_user_agent_is_used_when_forwarded_header_is_missing():
+    assert analytics.resolve_user_agent({"User-Agent": "Request browser"}) == (
+        "Request browser"
+    )
+
+
 @pytest.mark.asyncio
 async def test_missing_config_disables_analytics(monkeypatch):
     monkeypatch.setattr(
