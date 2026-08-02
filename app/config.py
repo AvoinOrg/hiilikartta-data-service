@@ -63,6 +63,17 @@ class Settings(BaseSettings):
     zitadel_client_id: str = os.getenv("ZITADEL_CLIENT_ID") or ""
     zitadel_client_secret: str = os.getenv("ZITADEL_CLIENT_SECRET") or ""
 
+    # Optional server-side Umami analytics settings
+    umami_enabled: bool = env_vars.get("UMAMI_ENABLED", "false").lower() in [
+        "true",
+        "1",
+        "t",
+        "y",
+        "yes",
+    ]
+    umami_host_url: str = env_vars.get("UMAMI_HOST_URL", "")
+    umami_website_id: str = env_vars.get("UMAMI_WEBSITE_ID", "")
+
 
 @lru_cache
 def get_settings():

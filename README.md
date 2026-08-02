@@ -42,3 +42,15 @@ To be able to run the hiilikartta-data-service, you may have to do following ste
 When you have the hiilikartta-data-service running,
 - the hiilikartta-data-service API can be found from the URL [http://localhost:8000](http://localhost:8000) and
 - jupyter notebook UI can be found from the URL [http://localhost:8888](http://localhost:8888)
+
+## Optional Umami analytics
+
+The production API can send `Calculation initiated` events to Umami. New plans
+also send `Calculation initiated with a new zoning plan`. Configure the
+server-side `UMAMI_ENABLED`, `UMAMI_HOST_URL`, and `UMAMI_WEBSITE_ID` variables
+to enable this integration. Analytics stay disabled if the variables are absent
+or incomplete, and delivery errors do not fail calculation requests.
+
+The frontend does not need to provide an analytics or website identifier. It
+may forward the browser user agent in `X-User-Agent`; the service uses a default
+user agent when that optional header is missing.

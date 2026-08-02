@@ -38,6 +38,7 @@ from app.utils.logger import get_logger
 from app.utils.data_loader import load_area_multipliers, load_bm_curves, unload_files
 from app.saq_worker import queue
 from app.auth.validator import ZitadelIntrospectTokenValidator, ValidatorError
+from app.utils.analytics import track_calculation_initiated, track_calculation_new_plan
 
 logger = get_logger(__name__)
 
@@ -208,6 +209,8 @@ async def calculate(
             detail="A calculation with the provided ID is already in progress.",
         )
 
+    is_new_plan = plan is None
+
     if plan:
         plan = process_and_create_plan(file, ui_id, visible_ui_id, name, plan=plan)
         plan.calculation_status = CalculationStatus.PROCESSING
@@ -232,6 +235,12 @@ async def calculate(
         )  # Pass the new plan to create_plan function
 
     await queue.enqueue("calculate_piece", ui_id=str(ui_id), retries=3, timeout=172800)
+
+    # Analytics are best-effort and require no frontend-provided identifiers.
+    user_agent = request.headers.get("X-User-Agent")
+    await track_calculation_initiated(user_agent=user_agent)
+    if is_new_plan:
+        await track_calculation_new_plan(user_agent=user_agent)
 
     return {
         "status": CalculationStatus.PROCESSING.value,
